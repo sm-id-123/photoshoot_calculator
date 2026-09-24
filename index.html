@@ -923,6 +923,31 @@
       '&details=' + encodeURIComponent(eventDetails()) +
       (S.proposal.location ? '&location=' + encodeURIComponent(S.proposal.location) : '');
   }
+  function stampIso(d){ return d.getFullYear() + '-' + pad(d.getMonth()+1) + '-' + pad(d.getDate()) + 'T' + pad(d.getHours()) + ':' + pad(d.getMinutes()) + ':00'; }
+  function outlookLink(host){
+    var sd = sessionDates(); if(!sd) return '';
+    return 'https://' + host + '/calendar/0/deeplink/compose?path=%2Fcalendar%2Faction%2Fcompose&rru=addevent' +
+      '&subject=' + encodeURIComponent(eventTitle()) +
+      '&startdt=' + encodeURIComponent(stampIso(sd.start)) + '&enddt=' + encodeURIComponent(stampIso(sd.end)) +
+      '&body=' + encodeURIComponent(eventDetails()) +
+      (S.proposal.location ? '&location=' + encodeURIComponent(S.proposal.location) : '');
+  }
+  function yahooLink(){
+    var sd = sessionDates(); if(!sd) return '';
+    return 'https://calendar.yahoo.com/?v=60&title=' + encodeURIComponent(eventTitle()) +
+      '&st=' + stampLocal(sd.start) + '&et=' + stampLocal(sd.end) +
+      '&desc=' + encodeURIComponent(eventDetails()) +
+      (S.proposal.location ? '&in_loc=' + encodeURIComponent(S.proposal.location) : '');
+  }
+  function calendarLinks(){
+    if(!sessionDates()) return [];
+    return [
+      {name:'Google Calendar', url:googleCalLink()},
+      {name:'Outlook.com', url:outlookLink('outlook.live.com')},
+      {name:'Outlook (work or school)', url:outlookLink('outlook.office.com')},
+      {name:'Yahoo Calendar', url:yahooLink()}
+    ];
+  }
   function icsText(){
     var sd = sessionDates(); if(!sd) return '';
     function escI(s){ return String(s).replace(/\\/g, '\\\\').replace(/;/g, '\\;').replace(/,/g, '\\,').replace(/\n/g, '\\n'); }
@@ -954,8 +979,12 @@
     } else {
       L.push('Deposit by Venmo (I\u2019ll send my code).');
     }
-    var gc = googleCalLink();
-    if(gc){ L.push(''); L.push('Add it to your calendar:'); L.push(gc); }
+    var cl = calendarLinks();
+    if(cl.length){
+      L.push(''); L.push('Add it to your calendar:');
+      for(var i=0;i<cl.length;i++){ L.push(cl[i].name + ': ' + cl[i].url); }
+      L.push('iPhone or Samsung calendar: open the attached .ics file.');
+    }
     L.push(''); L.push('Can\u2019t wait to see you!' + (S.terms.name ? ' \u2014 ' + S.terms.name : ''));
     return L.join('\n');
   }
@@ -981,15 +1010,29 @@
     rows.push(['Deposit due now', money0(d.deposit)]);
     rows.push(['Balance due on the day', money0(d.balance)]);
     y = pdfRows(doc, y, rows) + 10;
-    y = pdfPriceBox(doc, y, 'Send the deposit by Venmo', venmoUser() ? '@' + venmoUser() : '');
-    var q = getQr();
-    if(q){ try{ doc.addImage(q, 'JPEG', 54, y, 220, 220); }catch(e){} }
-    doc.setFont('helvetica', 'normal'); doc.setFontSize(11); doc.setTextColor(28, 34, 31);
-    var tx = q ? 294 : 54, ty = y + 20;
-    if(q){ doc.text('Scan this code in the Venmo app,', tx, ty); ty += 16; doc.text('or search for the username above.', tx, ty); ty += 26; }
-    if(venmoLink()){ doc.setTextColor(35, 64, 52); doc.textWithLink(venmoLink(), tx, ty, {url: venmoLink()}); ty += 26; }
-    var gc = googleCalLink();
-    if(gc){ doc.setTextColor(28, 34, 31); doc.text('Add the session to your calendar:', tx, ty); ty += 16; doc.setTextColor(35, 64, 52); doc.textWithLink('Open in Google Calendar', tx, ty, {url: gc}); }
+    y += 6;
+    doc.setFont('helvetica', 'bold'); doc.setFontSize(13); doc.setTextColor(28, 34, 31);
+    doc.text('Send the ' + money0(d.deposit) + ' deposit by Venmo', 306, y, {align:'center'}); y += 18;
+    var q = getQr(), size = 240, cx = 306;
+    if(q){
+      doc.setDrawColor(214, 221, 216); doc.roundedRect(cx - size/2 - 10, y - 4, size + 20, size + 8, 10, 10, 'S');
+      try{ doc.addImage(q, 'JPEG', cx - size/2, y, size, size); }catch(e){}
+      y += size + 22;
+      doc.setFont('helvetica', 'normal'); doc.setFontSize(11); doc.setTextColor(94, 107, 100);
+      doc.text('Scan with the Venmo app, or search the username below.', cx, y, {align:'center'}); y += 22;
+    }
+    if(venmoUser()){
+      doc.setFont('helvetica', 'bold'); doc.setFontSize(18); doc.setTextColor(28, 34, 31);
+      doc.text('@' + venmoUser(), cx, y, {align:'center'}); y += 26;
+      var bw = 200, bh = 40, bx = cx - bw/2;
+      doc.setFillColor(35, 64, 52); doc.roundedRect(bx, y, bw, bh, 8, 8, 'F');
+      doc.setFont('helvetica', 'bold'); doc.setFontSize(13); doc.setTextColor(255, 255, 255);
+      doc.text('Pay on Venmo', cx, y + 25, {align:'center'});
+      doc.link(bx, y, bw, bh, {url: venmoLink()});
+      y += bh + 14;
+      doc.setFont('helvetica', 'normal'); doc.setFontSize(9); doc.setTextColor(94, 107, 100);
+      doc.text('Tap the button to open Venmo. Calendar invite sent separately.', cx, y, {align:'center'});
+    }
     shareFile(doc.output('blob'), 'deposit-' + safeName(S.proposal.client) + '.pdf', 'application/pdf', 'Deposit details');
   });
   document.getElementById('shareIcs').addEventListener('click', function(){
