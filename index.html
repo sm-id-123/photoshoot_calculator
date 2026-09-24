@@ -411,25 +411,21 @@
   function defaults(){
     return {
       version: 2,
-      conf: {shoot:2, edit:2, client:2},
-      shootsPerMonth: 4,
+      conf: {shoot:2, edit:2, client:1},
+      shootsPerMonth: 3,
       mileRate: 0.70, cushion: 35, roundTo: 25,
       gear: [
-        {name:'Camera body', type:'camera', paid:2000, boughtYear:THIS_YEAR - 2, modelYear:THIS_YEAR - 2},
-        {name:'Lens', type:'lens', paid:1200, boughtYear:THIS_YEAR - 2, modelYear:THIS_YEAR - 2},
-        {name:'Computer', type:'computer', brand:'apple', paid:1800, boughtYear:THIS_YEAR - 3, modelYear:THIS_YEAR - 3},
-        {name:'Props, bags, cards, batteries', type:'other', paid:400, boughtYear:THIS_YEAR - 1, modelYear:THIS_YEAR - 1}
+        {name:'EOS R', type:'camera', paid:977, boughtYear:2025, modelYear:2018},
+        {name:'Sigma 35mm f/1.4 DG DN Art (Mirrorless)', type:'lens', paid:606, boughtYear:2025, modelYear:2021},
+        {name:'Macbook Pro', type:'computer', brand:'apple', paid:3000, boughtYear:2024, modelYear:2024},
+        {name:'Accessories (SD Card, bench, etc)', type:'other', paid:250, boughtYear:2025, modelYear:2025}
       ],
       bills: [
-        {name:'Adobe Lightroom + Photoshop', amount:22.99, every:'month'},
-        {name:'Website and client galleries', amount:25, every:'month'},
-        {name:'Cloud backup', amount:10, every:'month'},
-        {name:'Business insurance', amount:20, every:'month'},
-        {name:'Domain name', amount:20, every:'year'},
-        {name:'Photography course', amount:300, every:'once', years:2}
+        {name:'Adobe Lightroom', amount:11.99, every:'month'},
+        {name:'Website and client galleries', amount:10, every:'month'}
       ],
-      quote: {shootHours:1, editHours:2.5, miles:20, extras:0},
-      terms: {name:'', deposit:50, photosPerHour:25, reschedules:2, noticeHours:48},
+      quote: {shootHours:0.5, editHours:2.5, miles:30, extras:0},
+      terms: {name:'Marisa Elise Photography', deposit:50, photosPerHour:30, reschedules:2, noticeHours:24},
       proposal: {client:'', date:'', time:'', location:'', people:4, photos:''}
     };
   }
