@@ -118,10 +118,16 @@
     .proposal{border-radius:0;padding:0;background:#fff;color:#000}
     .proposal .price-line{background:#eee}
   }
+  .qrbox{margin-top:10px;display:flex;align-items:center;gap:12px}
+  .qrbox img{width:96px;height:96px;border-radius:10px;border:1px solid var(--line);background:#fff}
+  .qrbox .btn{width:auto;margin:0;padding:8px 12px}
+  .lines .plain{padding:8px 0;font-size:14px;color:var(--muted);border-bottom:1px dashed var(--line)}
+  .lines .plain b{color:var(--ink)}
   .toast{position:fixed;left:50%;bottom:calc(24px + env(safe-area-inset-bottom,0px));transform:translateX(-50%) translateY(20px);background:var(--ink);color:var(--bg);padding:10px 16px;border-radius:999px;font-size:14px;opacity:0;transition:.25s;pointer-events:none}
   .toast.show{opacity:1;transform:translateX(-50%) translateY(0)}
   @media (prefers-reduced-motion: reduce){.toast{transition:none}}
 </style>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
 </head>
 <body>
 <div class="wrap">
@@ -141,6 +147,15 @@
       <div class="price" id="price">$0</div>
       <div class="floor">Never go below <b id="floor">$0</b> (that's just your costs and pay, no cushion).</div>
       <ul class="lines" id="lines"></ul>
+    </div>
+
+    <div class="card">
+      <h2>Discount</h2>
+      <div class="row">
+        <div><label>Amount</label><input type="number" inputmode="decimal" step="5" min="0" id="q_discount"></div>
+        <div><label>Type</label><select id="q_discountType"><option value="pct">Percent off</option><option value="usd">Dollars off</option></select></div>
+      </div>
+      <p class="hint" id="discountHint">Leave at 0 for no discount. Shows on the proposal as a line the client can see.</p>
     </div>
 
     <div class="card">
@@ -181,8 +196,18 @@
     <div class="card proposal" id="proposalPreview"></div>
 
     <button class="btn" id="copyProposal">Copy as text</button>
-    <button class="btn ghost" id="printProposal">Save as PDF</button>
-    <p class="hint">Save as PDF opens the share sheet on iPhone. Choose Print, then pinch out on the preview and share, or pick Save to Files.</p>
+    <button class="btn ghost" id="printProposal">Share as PDF</button>
+    <p class="hint">Save as PDF builds a real PDF and opens the share sheet, so you can text it, AirDrop it, or save it to Files. The first time you use it, the phone needs internet to fetch the PDF tool.</p>
+
+    <div class="card">
+      <h2>After they confirm</h2>
+      <p class="why">Send the deposit details and a calendar invite. Set your Venmo name and QR code in Setup.</p>
+      <div class="lines" id="afterPreview"></div>
+    </div>
+    <button class="btn" id="copyPayment">Copy payment and calendar text</button>
+    <button class="btn ghost" id="sharePaymentPdf">Share payment PDF (with QR code)</button>
+    <button class="btn ghost" id="shareIcs">Share calendar file (.ics)</button>
+    <p class="hint">The text includes a Venmo link and a Google Calendar link that work on any phone. The .ics file opens in Apple Calendar, Google Calendar, Samsung Calendar, and Outlook.</p>
   </section>
 
   <!-- ================= SETUP ================= -->
@@ -259,6 +284,19 @@
         <div><label>Notice needed (hours)</label><input type="number" inputmode="numeric" step="12" min="0" id="t_noticeHours"></div>
       </div>
       <p class="hint">The deposit counts toward the total. If you cancel, the proposal promises a full refund of the deposit and lets the client choose to rebook or go elsewhere.</p>
+    </div>
+
+    <div class="card">
+      <h2>Payment</h2>
+      <p class="why">Used in the payment text and PDF sent after a client confirms.</p>
+      <div class="row">
+        <div><label>Venmo username (without the @)</label><input type="text" id="t_venmo" placeholder="marisa-elise" autocapitalize="none" autocorrect="off"></div>
+      </div>
+      <div class="row">
+        <div><label>Venmo QR code image</label><input type="file" accept="image/*" id="t_qrFile"></div>
+      </div>
+      <div id="qrPreview" class="qrbox"></div>
+      <p class="hint">In Venmo: tap your profile, then the QR icon, then Share, and save the image to Photos. Upload it here. The image stays on this phone only and is not part of the Backup text, so re-upload it after a restore.</p>
     </div>
 
     <div class="card">
@@ -431,8 +469,8 @@
         {name:'Adobe Lightroom', amount:11.99, every:'month'},
         {name:'Website and client galleries', amount:10, every:'month'}
       ],
-      quote: {shootHours:0.5, editHours:2.5, miles:30, extras:0, extended:false},
-      terms: {name:'Marisa Elise Photography', deposit:50, photosPerHour:30, reschedules:2, noticeHours:24},
+      quote: {shootHours:0.5, editHours:2.5, miles:30, extras:0, extended:false, discount:0, discountType:'pct'},
+      terms: {name:'Marisa Elise Photography', deposit:50, photosPerHour:30, reschedules:2, noticeHours:24, venmo:''},
       proposal: {client:'', date:'', time:'', location:'', people:4, photos:''}
     };
   }
@@ -490,10 +528,15 @@
     var floor = pay + gear + bills + travel + extras;
     var cushion = floor * num(S.cushion)/100;
     var extended = q.extended ? num(S.extendedFee) : 0;
-    var raw = floor + cushion + extended;
     var r = Math.max(1, num(S.roundTo));
-    var price = Math.ceil(raw / r) * r;
-    return {pay:pay, hours:hours, gear:gear, bills:bills, travel:travel, extras:extras, floor:floor, cushion:cushion, extended:extended, price:price};
+    var listPrice = Math.ceil((floor + cushion + extended) / r) * r;
+    var discount = 0;
+    if(num(q.discount) > 0){
+      discount = q.discountType === 'usd' ? num(q.discount) : listPrice * num(q.discount) / 100;
+      discount = Math.min(listPrice, Math.round(discount));
+    }
+    var price = listPrice - discount;
+    return {pay:pay, hours:hours, gear:gear, bills:bills, travel:travel, extras:extras, floor:floor, cushion:cushion, extended:extended, listPrice:listPrice, discount:discount, price:price};
   }
 
   /* ---------- render quote ---------- */
@@ -511,7 +554,12 @@
     if(c.extras > 0) lines.push(['Extras this shoot', '', c.extras]);
     lines.push(['Cushion', num(S.cushion) + '% for taxes, reshoots, and growth', c.cushion]);
     if(c.extended > 0) lines.push(['Extended family', 'Flat add-on for larger groups', c.extended]);
-    lines.push(['Rounded up to nearest $' + num(S.roundTo), '', c.price - (c.floor + c.cushion + c.extended)]);
+    lines.push(['Rounded up to nearest $' + num(S.roundTo), '', c.listPrice - (c.floor + c.cushion + c.extended)]);
+    if(c.discount > 0) lines.push(['Discount', (S.quote.discountType === 'usd' ? money0(num(S.quote.discount)) + ' off' : num(S.quote.discount) + '% off ' + money0(c.listPrice)), -c.discount]);
+    var dh = document.getElementById('discountHint');
+    if(c.discount > 0 && c.price < c.floor) dh.textContent = 'Careful: ' + money0(c.price) + ' is below your ' + money0(c.floor) + ' floor, so this session loses money on paper.';
+    else if(c.discount > 0) dh.textContent = money0(c.listPrice) + ' before the discount, ' + money0(c.price) + ' after.';
+    else dh.textContent = 'Leave at 0 for no discount. Shows on the proposal as a line the client can see.';
     var html = '';
     for(var i=0;i<lines.length;i++){
       html += '<li><span>' + esc(lines[i][0]) + (lines[i][1] ? '<em>' + esc(lines[i][1]) + '</em>' : '') + '</span><span>' + money(lines[i][2]) + '</span></li>';
@@ -519,7 +567,7 @@
     html += '<li class="total"><span>Price</span><span>' + money0(c.price) + '</span></li>';
     document.getElementById('lines').innerHTML = html;
     document.getElementById('exportBox').value = JSON.stringify(S, null, 2);
-    if(typeof renderProposal === 'function' && document.getElementById('proposalPreview').innerHTML) renderProposal();
+    if(typeof renderProposal === 'function' && document.getElementById('proposalPreview').innerHTML){ renderProposal(); renderAfter(); }
   }
 
   /* ---------- render setup ---------- */
@@ -674,7 +722,7 @@
     return {
       client: p.client || 'your family', date: niceDate(p.date), time: niceTime(p.time), location: p.location,
       people: num(p.people), photos: photosPromised(), hours: num(S.quote.shootHours),
-      price: c.price, deposit: deposit, balance: c.price - deposit,
+      price: c.price, listPrice: c.listPrice, discount: c.discount, deposit: deposit, balance: c.price - deposit,
       reschedules: Math.max(0, Math.round(num(t.reschedules))), notice: Math.max(0, Math.round(num(t.noticeHours))),
       name: t.name || 'me'
     };
@@ -702,6 +750,7 @@
     rows.push(['Session length', plural(d.hours, 'hour')]);
     rows.push(['People in the photos', d.people]);
     rows.push(['Edited photos you’ll receive', 'At least ' + d.photos]);
+    if(d.discount > 0){ rows.push(['Session price', money0(d.listPrice)]); rows.push(['Your discount', '\u2212 ' + money0(d.discount)]); }
     rows.push(['Deposit to hold the date', money0(d.deposit)]);
     var dl = '';
     for(var i=0;i<rows.length;i++) dl += '<dt>' + esc(rows[i][0]) + '</dt><dd>' + esc(String(rows[i][1])) + '</dd>';
@@ -726,6 +775,7 @@
     L.push('Session length: ' + plural(d.hours, 'hour'));
     L.push('People in the photos: ' + d.people);
     L.push('Edited photos you’ll receive: at least ' + d.photos);
+    if(d.discount > 0){ L.push('Session price: ' + money0(d.listPrice)); L.push('Your discount: -' + money0(d.discount)); }
     L.push('Total for the session: ' + money0(d.price));
     L.push('Deposit to hold the date: ' + money0(d.deposit));
     L.push('');
@@ -746,7 +796,206 @@
     } else { fallback(); }
   }
   document.getElementById('copyProposal').addEventListener('click', function(){ copyText(proposalText(), 'Copied. Paste it into a text.'); });
-  document.getElementById('printProposal').addEventListener('click', function(){ window.print(); });
+  /* ---------- PDF building (jsPDF) ---------- */
+  function pdfReady(){ return !!(window.jspdf && window.jspdf.jsPDF); }
+  function shareFile(blob, name, type, title){
+    var file = null;
+    try{ file = new File([blob], name, {type:type}); }catch(e){}
+    if(file && navigator.canShare && navigator.canShare({files:[file]}) && navigator.share){
+      navigator.share({files:[file], title:title}).then(function(){}, function(err){ if(!err || err.name !== 'AbortError') fallbackDownload(blob, name); });
+      return;
+    }
+    fallbackDownload(blob, name);
+  }
+  function fallbackDownload(blob, name){
+    var url = URL.createObjectURL(blob);
+    var a = document.createElement('a'); a.href = url; a.download = name; a.style.display = 'none';
+    document.body.appendChild(a); a.click();
+    setTimeout(function(){ document.body.removeChild(a); URL.revokeObjectURL(url); }, 2000);
+    toast('Saved ' + name);
+  }
+  function newDoc(){
+    var jsPDF = window.jspdf.jsPDF;
+    var doc = new jsPDF({unit:'pt', format:'letter'});
+    return doc;
+  }
+  function pdfHeader(doc, title, sub){
+    doc.setFillColor(35, 64, 52); doc.rect(0, 0, 612, 8, 'F');
+    doc.setFont('times', 'bold'); doc.setFontSize(24); doc.setTextColor(28, 34, 31);
+    doc.text(title, 54, 70);
+    doc.setFont('helvetica', 'normal'); doc.setFontSize(11); doc.setTextColor(94, 107, 100);
+    doc.text(sub, 54, 90);
+    return 118;
+  }
+  function pdfRows(doc, y, rows){
+    doc.setFontSize(11);
+    for(var i=0;i<rows.length;i++){
+      doc.setFont('helvetica', 'normal'); doc.setTextColor(94, 107, 100); doc.text(String(rows[i][0]), 54, y);
+      doc.setFont('helvetica', 'bold'); doc.setTextColor(28, 34, 31); doc.text(String(rows[i][1]), 230, y);
+      y += 18;
+    }
+    return y;
+  }
+  function pdfParas(doc, y, paras, width){
+    doc.setFont('helvetica', 'normal'); doc.setFontSize(11); doc.setTextColor(28, 34, 31);
+    for(var i=0;i<paras.length;i++){
+      var lines = doc.splitTextToSize(paras[i], width || 504);
+      doc.text(lines, 54, y); y += lines.length * 15 + 8;
+    }
+    return y;
+  }
+  function pdfPriceBox(doc, y, label, value){
+    doc.setFillColor(220, 230, 223); doc.roundedRect(54, y, 504, 34, 6, 6, 'F');
+    doc.setFont('helvetica', 'bold'); doc.setFontSize(13); doc.setTextColor(28, 34, 31);
+    doc.text(label, 66, y + 22); doc.text(value, 546, y + 22, {align:'right'});
+    return y + 50;
+  }
+  function safeName(s){ return String(s || 'session').replace(/[^a-z0-9]+/gi, '-').replace(/^-|-$/g, '').toLowerCase() || 'session'; }
+
+  document.getElementById('printProposal').addEventListener('click', function(){
+    if(!pdfReady()){ toast('PDF tool not loaded. Connect to internet and reload once.'); return; }
+    var d = proposalData();
+    var doc = newDoc();
+    var y = pdfHeader(doc, (S.quote.extended ? 'Extended family' : 'Family') + ' session for ' + d.client, 'A proposal from ' + d.name);
+    var rows = [];
+    if(d.date) rows.push(['Date', d.date]);
+    if(d.time) rows.push(['Time', d.time]);
+    if(d.location) rows.push(['Location', d.location]);
+    rows.push(['Session type', S.quote.extended ? 'Extended family' : 'Immediate family']);
+    rows.push(['Session length', plural(d.hours, 'hour')]);
+    rows.push(['People in the photos', d.people]);
+    rows.push(['Edited photos you\u2019ll receive', 'At least ' + d.photos]);
+    if(d.discount > 0){ rows.push(['Session price', money0(d.listPrice)]); rows.push(['Your discount', '- ' + money0(d.discount)]); }
+    rows.push(['Deposit to hold the date', money0(d.deposit)]);
+    y = pdfRows(doc, y, rows) + 10;
+    y = pdfPriceBox(doc, y, 'Total for the session', money0(d.price));
+    doc.setDrawColor(214, 221, 216); doc.setLineDashPattern([2, 2], 0); doc.line(54, y, 558, y); y += 20;
+    pdfParas(doc, y, termsSentences(d));
+    shareFile(doc.output('blob'), 'proposal-' + safeName(S.proposal.client) + '.pdf', 'application/pdf', 'Session proposal');
+  });
+
+  /* ---------- after they confirm: payment + calendar ---------- */
+  var QR_KEY = 'shootPricing.qr';
+  function getQr(){ try{ return localStorage.getItem(QR_KEY) || ''; }catch(e){ return ''; } }
+  function storeQr(file){
+    var reader = new FileReader();
+    reader.onload = function(){
+      var img = new Image();
+      img.onload = function(){
+        var max = 640, w = img.width, h = img.height, sc = Math.min(1, max / Math.max(w, h));
+        var cv = document.createElement('canvas'); cv.width = Math.round(w*sc); cv.height = Math.round(h*sc);
+        var ctx = cv.getContext('2d'); ctx.fillStyle = '#fff'; ctx.fillRect(0,0,cv.width,cv.height); ctx.drawImage(img, 0, 0, cv.width, cv.height);
+        var data = cv.toDataURL('image/jpeg', 0.85);
+        try{ localStorage.setItem(QR_KEY, data); toast('QR code saved.'); }catch(e){ toast('Image too large to save. Try a smaller screenshot.'); }
+        renderQr(); renderAfter();
+      };
+      img.src = reader.result;
+    };
+    reader.readAsDataURL(file);
+  }
+  function renderQr(){
+    var box = document.getElementById('qrPreview'); var q = getQr();
+    if(!q){ box.innerHTML = '<span class="hint">No QR code uploaded yet.</span>'; return; }
+    box.innerHTML = '<img src="' + q + '" alt="Venmo QR code"><button class="btn danger" id="qrRemove">Remove</button>';
+    document.getElementById('qrRemove').addEventListener('click', function(){ try{ localStorage.removeItem(QR_KEY); }catch(e){} renderQr(); renderAfter(); });
+  }
+  function venmoUser(){ return String(S.terms.venmo || '').replace(/^@/, '').trim(); }
+  function venmoLink(){ return venmoUser() ? 'https://venmo.com/u/' + venmoUser() : ''; }
+  function pad(n){ return (n < 10 ? '0' : '') + n; }
+  function sessionDates(){
+    var p = S.proposal; if(!p.date) return null;
+    var dp = p.date.split('-'), tp = (p.time || '10:00').split(':');
+    var start = new Date(num(dp[0]), num(dp[1]) - 1, num(dp[2]), num(tp[0]), num(tp[1]));
+    var end = new Date(start.getTime() + Math.max(0.5, num(S.quote.shootHours)) * 3600000);
+    return {start:start, end:end};
+  }
+  function stampLocal(d){ return d.getFullYear() + pad(d.getMonth()+1) + pad(d.getDate()) + 'T' + pad(d.getHours()) + pad(d.getMinutes()) + '00'; }
+  function eventTitle(){ return 'Family photo session with ' + (S.terms.name || 'your photographer'); }
+  function eventDetails(){
+    var d = proposalData();
+    return 'Family photo session. ' + plural(d.hours, 'hour') + ', at least ' + d.photos + ' edited photos. Total ' + money0(d.price) + ', deposit ' + money0(d.deposit) + ' paid to hold the date, ' + money0(d.balance) + ' due on the day.';
+  }
+  function googleCalLink(){
+    var sd = sessionDates(); if(!sd) return '';
+    return 'https://calendar.google.com/calendar/render?action=TEMPLATE' +
+      '&text=' + encodeURIComponent(eventTitle()) +
+      '&dates=' + stampLocal(sd.start) + '/' + stampLocal(sd.end) +
+      '&details=' + encodeURIComponent(eventDetails()) +
+      (S.proposal.location ? '&location=' + encodeURIComponent(S.proposal.location) : '');
+  }
+  function icsText(){
+    var sd = sessionDates(); if(!sd) return '';
+    function escI(s){ return String(s).replace(/\\/g, '\\\\').replace(/;/g, '\\;').replace(/,/g, '\\,').replace(/\n/g, '\\n'); }
+    var now = new Date();
+    var stampUtc = now.getUTCFullYear() + pad(now.getUTCMonth()+1) + pad(now.getUTCDate()) + 'T' + pad(now.getUTCHours()) + pad(now.getUTCMinutes()) + pad(now.getUTCSeconds()) + 'Z';
+    return ['BEGIN:VCALENDAR','VERSION:2.0','PRODID:-//Shoot Pricing//EN','CALSCALE:GREGORIAN','METHOD:PUBLISH',
+      'BEGIN:VEVENT',
+      'UID:' + stampLocal(sd.start) + '-' + safeName(S.proposal.client) + '@shootpricing',
+      'DTSTAMP:' + stampUtc,
+      'DTSTART:' + stampLocal(sd.start),
+      'DTEND:' + stampLocal(sd.end),
+      'SUMMARY:' + escI(eventTitle()),
+      'DESCRIPTION:' + escI(eventDetails()),
+      (S.proposal.location ? 'LOCATION:' + escI(S.proposal.location) : ''),
+      'BEGIN:VALARM','TRIGGER:-P1D','ACTION:DISPLAY','DESCRIPTION:Photo session tomorrow','END:VALARM',
+      'END:VEVENT','END:VCALENDAR'].filter(Boolean).join('\r\n');
+  }
+  function paymentText(){
+    var d = proposalData(), L = [];
+    L.push('Thank you for confirming! Here is everything for your session.');
+    L.push('');
+    if(d.date) L.push('When: ' + d.date + (d.time ? ' at ' + d.time : ''));
+    if(d.location) L.push('Where: ' + d.location);
+    L.push('Total: ' + money0(d.price) + ' (' + money0(d.deposit) + ' deposit now, ' + money0(d.balance) + ' on the day)');
+    L.push('');
+    if(venmoUser()){
+      L.push('Deposit by Venmo: @' + venmoUser());
+      L.push(venmoLink());
+    } else {
+      L.push('Deposit by Venmo (I\u2019ll send my code).');
+    }
+    var gc = googleCalLink();
+    if(gc){ L.push(''); L.push('Add it to your calendar:'); L.push(gc); }
+    L.push(''); L.push('Can\u2019t wait to see you!' + (S.terms.name ? ' \u2014 ' + S.terms.name : ''));
+    return L.join('\n');
+  }
+  function renderAfter(){
+    var box = document.getElementById('afterPreview'); if(!box) return;
+    var d = proposalData();
+    var html = '';
+    html += '<div class="plain">Venmo: ' + (venmoUser() ? '<b>@' + esc(venmoUser()) + '</b>' : '<b>not set</b> (add it in Setup)') + '</div>';
+    html += '<div class="plain">QR code: <b>' + (getQr() ? 'uploaded' : 'not uploaded') + '</b></div>';
+    html += '<div class="plain">Deposit due now: <b>' + money0(d.deposit) + '</b>, balance on the day: <b>' + money0(d.balance) + '</b></div>';
+    html += '<div class="plain">Calendar: <b>' + (S.proposal.date ? d.date + (d.time ? ' at ' + d.time : '') : 'add a date above') + '</b></div>';
+    box.innerHTML = html;
+  }
+  document.getElementById('copyPayment').addEventListener('click', function(){ copyText(paymentText(), 'Copied. Paste it into a text.'); });
+  document.getElementById('sharePaymentPdf').addEventListener('click', function(){
+    if(!pdfReady()){ toast('PDF tool not loaded. Connect to internet and reload once.'); return; }
+    var d = proposalData(), doc = newDoc();
+    var y = pdfHeader(doc, 'Deposit for your session', (S.terms.name || '') );
+    var rows = [];
+    if(d.date) rows.push(['When', d.date + (d.time ? ' at ' + d.time : '')]);
+    if(d.location) rows.push(['Where', d.location]);
+    rows.push(['Total for the session', money0(d.price)]);
+    rows.push(['Deposit due now', money0(d.deposit)]);
+    rows.push(['Balance due on the day', money0(d.balance)]);
+    y = pdfRows(doc, y, rows) + 10;
+    y = pdfPriceBox(doc, y, 'Send the deposit by Venmo', venmoUser() ? '@' + venmoUser() : '');
+    var q = getQr();
+    if(q){ try{ doc.addImage(q, 'JPEG', 54, y, 220, 220); }catch(e){} }
+    doc.setFont('helvetica', 'normal'); doc.setFontSize(11); doc.setTextColor(28, 34, 31);
+    var tx = q ? 294 : 54, ty = y + 20;
+    if(q){ doc.text('Scan this code in the Venmo app,', tx, ty); ty += 16; doc.text('or search for the username above.', tx, ty); ty += 26; }
+    if(venmoLink()){ doc.setTextColor(35, 64, 52); doc.textWithLink(venmoLink(), tx, ty, {url: venmoLink()}); ty += 26; }
+    var gc = googleCalLink();
+    if(gc){ doc.setTextColor(28, 34, 31); doc.text('Add the session to your calendar:', tx, ty); ty += 16; doc.setTextColor(35, 64, 52); doc.textWithLink('Open in Google Calendar', tx, ty, {url: gc}); }
+    shareFile(doc.output('blob'), 'deposit-' + safeName(S.proposal.client) + '.pdf', 'application/pdf', 'Deposit details');
+  });
+  document.getElementById('shareIcs').addEventListener('click', function(){
+    var t = icsText(); if(!t){ toast('Add a date to the session first.'); return; }
+    shareFile(new Blob([t], {type:'text/calendar'}), 'photo-session-' + safeName(S.proposal.client) + '.ics', 'text/calendar', 'Photo session');
+  });
 
   function renderAll(){
     bindText('p_client', S.proposal, 'client', renderProposal);
@@ -766,6 +1015,13 @@
     bindSimple('s_mileRate', S, 'mileRate');
     bindSimple('s_cushion', S, 'cushion');
     bindSimple('s_extendedFee', S, 'extendedFee');
+    bindSimple('q_discount', S.quote, 'discount');
+    (function(){ var el = document.getElementById('q_discountType'); el.value = S.quote.discountType || 'pct';
+      el.addEventListener('change', function(){ S.quote.discountType = el.value; save(); renderQuote(); }); })();
+    bindText('t_venmo', S.terms, 'venmo', renderAfter);
+    (function(){ var f = document.getElementById('t_qrFile');
+      f.addEventListener('change', function(){ if(f.files && f.files[0]) storeQr(f.files[0]); }); })();
+    renderQr(); renderAfter();
     (function(){ var el = document.getElementById('q_extended'); el.checked = !!S.quote.extended;
       el.addEventListener('change', function(){ S.quote.extended = el.checked; save(); renderQuote(); }); })();
     bindSimple('s_roundTo', S, 'roundTo');
@@ -822,7 +1078,7 @@
     if(confirm('Reset every setting to the starting defaults?')){ S = defaults(); save(); rebuild(); toast('Reset to defaults.'); }
   });
   function rebuild(){
-    ['p_client','p_date','p_time','p_location','p_people','p_photos','t_name','t_deposit','t_photosPerHour','t_reschedules','t_noticeHours','c_shoot','c_edit','c_client','s_shootsPerMonth','s_mileRate','s_cushion','s_extendedFee','q_extended','s_roundTo','q_shootHours','q_editHours','q_miles','q_extras'].forEach(function(id){
+    ['p_client','p_date','p_time','p_location','p_people','p_photos','t_name','t_deposit','t_photosPerHour','t_reschedules','t_noticeHours','c_shoot','c_edit','c_client','s_shootsPerMonth','s_mileRate','s_cushion','s_extendedFee','q_extended','q_discount','q_discountType','t_venmo','t_qrFile','s_roundTo','q_shootHours','q_editHours','q_miles','q_extras'].forEach(function(id){
       var el = document.getElementById(id); var c = el.cloneNode(true); el.parentNode.replaceChild(c, el);
     });
     renderAll();
