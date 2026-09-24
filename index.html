@@ -87,6 +87,8 @@
   input[type=range]::-moz-range-track{height:6px;border-radius:3px;background:var(--green-soft)}
   input[type=range]::-moz-range-thumb{width:22px;height:22px;border-radius:50%;background:var(--green);border:3px solid var(--paper)}
   .scale-text{margin:4px 0 0;font-size:14px;color:var(--muted);min-height:2.8em}
+  .check{display:flex;align-items:center;gap:10px;margin-top:14px;font-size:15px;color:var(--ink);cursor:pointer}
+  .check input{width:22px;height:22px;margin:0;padding:0;-webkit-appearance:checkbox;appearance:checkbox;accent-color:var(--green);flex:0 0 auto}
   .payout{display:flex;align-items:center;gap:14px;margin-top:16px;padding:12px 14px;background:var(--green-soft);border-radius:12px}
   .payrate{font-family:"Iowan Old Style","Palatino Linotype",Palatino,Georgia,serif;font-size:34px;font-weight:600;line-height:1;color:var(--green)}
   .payrate small{font-size:14px;font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Helvetica,Arial,sans-serif;color:var(--muted);margin-left:2px}
@@ -152,7 +154,8 @@
         <div><label>Round-trip miles</label><input type="number" inputmode="decimal" step="1" min="0" id="q_miles"></div>
         <div class="money"><label>Extras (props, permit, parking)</label><input type="number" inputmode="decimal" step="1" min="0" id="q_extras"></div>
       </div>
-      <p class="hint">Rule of thumb: editing takes 1.5 to 3 hours for every hour shot. Culling, color, skin, exporting, and uploading a gallery all count.</p>
+      <label class="check"><input type="checkbox" id="q_extended"><span>Extended family session (grandparents, aunts, uncles, cousins)</span></label>
+      <p class="hint">Rule of thumb: editing takes 1.5 to 3 hours for every hour shot. Culling, color, skin, exporting, and uploading a gallery all count. Extended family adds a flat amount set in Setup; bigger groups mean more wrangling and more edits.</p>
     </div>
 
     <div class="card">
@@ -267,7 +270,11 @@
     </div>
 
     <div class="card">
-      <h2>Cushion</h2>
+      <h2>Add-ons and cushion</h2>
+      <div class="row">
+        <div class="money"><label>Extended family add-on</label><input type="number" inputmode="decimal" step="5" min="0" id="s_extendedFee"></div>
+      </div>
+      <p class="hint">Flat amount added to the total when the extended family box is checked on a session.</p>
       <div class="row">
         <div><label>Cushion percent</label><input type="number" inputmode="decimal" step="5" min="0" id="s_cushion"></div>
         <div><label>Round price to nearest</label>
@@ -413,7 +420,7 @@
       version: 2,
       conf: {shoot:2, edit:2, client:1},
       shootsPerMonth: 3,
-      mileRate: 0.70, cushion: 35, roundTo: 25,
+      mileRate: 0.70, cushion: 35, roundTo: 25, extendedFee: 75,
       gear: [
         {name:'EOS R', type:'camera', paid:977, boughtYear:2025, modelYear:2018},
         {name:'Sigma 35mm f/1.4 DG DN Art (Mirrorless)', type:'lens', paid:606, boughtYear:2025, modelYear:2021},
@@ -424,7 +431,7 @@
         {name:'Adobe Lightroom', amount:11.99, every:'month'},
         {name:'Website and client galleries', amount:10, every:'month'}
       ],
-      quote: {shootHours:0.5, editHours:2.5, miles:30, extras:0},
+      quote: {shootHours:0.5, editHours:2.5, miles:30, extras:0, extended:false},
       terms: {name:'Marisa Elise Photography', deposit:50, photosPerHour:30, reschedules:2, noticeHours:24},
       proposal: {client:'', date:'', time:'', location:'', people:4, photos:''}
     };
@@ -482,10 +489,11 @@
     var extras = num(q.extras);
     var floor = pay + gear + bills + travel + extras;
     var cushion = floor * num(S.cushion)/100;
-    var raw = floor + cushion;
+    var extended = q.extended ? num(S.extendedFee) : 0;
+    var raw = floor + cushion + extended;
     var r = Math.max(1, num(S.roundTo));
     var price = Math.ceil(raw / r) * r;
-    return {pay:pay, hours:hours, gear:gear, bills:bills, travel:travel, extras:extras, floor:floor, cushion:cushion, price:price};
+    return {pay:pay, hours:hours, gear:gear, bills:bills, travel:travel, extras:extras, floor:floor, cushion:cushion, extended:extended, price:price};
   }
 
   /* ---------- render quote ---------- */
@@ -502,7 +510,8 @@
     ];
     if(c.extras > 0) lines.push(['Extras this shoot', '', c.extras]);
     lines.push(['Cushion', num(S.cushion) + '% for taxes, reshoots, and growth', c.cushion]);
-    lines.push(['Rounded up to nearest $' + num(S.roundTo), '', c.price - (c.floor + c.cushion)]);
+    if(c.extended > 0) lines.push(['Extended family', 'Flat add-on for larger groups', c.extended]);
+    lines.push(['Rounded up to nearest $' + num(S.roundTo), '', c.price - (c.floor + c.cushion + c.extended)]);
     var html = '';
     for(var i=0;i<lines.length;i++){
       html += '<li><span>' + esc(lines[i][0]) + (lines[i][1] ? '<em>' + esc(lines[i][1]) + '</em>' : '') + '</span><span>' + money(lines[i][2]) + '</span></li>';
@@ -689,6 +698,7 @@
     if(d.date) rows.push(['Date', d.date]);
     if(d.time) rows.push(['Time', d.time]);
     if(d.location) rows.push(['Location', d.location]);
+    rows.push(['Session type', S.quote.extended ? 'Extended family' : 'Immediate family']);
     rows.push(['Session length', plural(d.hours, 'hour')]);
     rows.push(['People in the photos', d.people]);
     rows.push(['Edited photos you’ll receive', 'At least ' + d.photos]);
@@ -697,7 +707,7 @@
     for(var i=0;i<rows.length;i++) dl += '<dt>' + esc(rows[i][0]) + '</dt><dd>' + esc(String(rows[i][1])) + '</dd>';
     var terms = termsSentences(d).map(function(x){ return '<p>' + esc(x) + '</p>'; }).join('');
     document.getElementById('proposalPreview').innerHTML =
-      '<h3>Family session for ' + esc(d.client) + '</h3>' +
+      '<h3>' + (S.quote.extended ? 'Extended family' : 'Family') + ' session for ' + esc(d.client) + '</h3>' +
       '<div class="from">A proposal from ' + esc(d.name) + '</div>' +
       '<dl>' + dl + '</dl>' +
       '<div class="price-line"><span>Total for the session</span><span>' + money0(d.price) + '</span></div>' +
@@ -706,12 +716,13 @@
   function proposalText(){
     var d = proposalData();
     var L = [];
-    L.push('Family session for ' + d.client);
+    L.push((S.quote.extended ? 'Extended family' : 'Family') + ' session for ' + d.client);
     L.push('A proposal from ' + d.name);
     L.push('');
     if(d.date) L.push('Date: ' + d.date);
     if(d.time) L.push('Time: ' + d.time);
     if(d.location) L.push('Location: ' + d.location);
+    L.push('Session type: ' + (S.quote.extended ? 'Extended family' : 'Immediate family'));
     L.push('Session length: ' + plural(d.hours, 'hour'));
     L.push('People in the photos: ' + d.people);
     L.push('Edited photos you’ll receive: at least ' + d.photos);
@@ -754,6 +765,9 @@
     bindSimple('s_shootsPerMonth', S, 'shootsPerMonth');
     bindSimple('s_mileRate', S, 'mileRate');
     bindSimple('s_cushion', S, 'cushion');
+    bindSimple('s_extendedFee', S, 'extendedFee');
+    (function(){ var el = document.getElementById('q_extended'); el.checked = !!S.quote.extended;
+      el.addEventListener('change', function(){ S.quote.extended = el.checked; save(); renderQuote(); }); })();
     bindSimple('s_roundTo', S, 'roundTo');
     bindSimple('q_shootHours', S.quote, 'shootHours');
     bindSimple('q_editHours', S.quote, 'editHours');
@@ -808,7 +822,7 @@
     if(confirm('Reset every setting to the starting defaults?')){ S = defaults(); save(); rebuild(); toast('Reset to defaults.'); }
   });
   function rebuild(){
-    ['p_client','p_date','p_time','p_location','p_people','p_photos','t_name','t_deposit','t_photosPerHour','t_reschedules','t_noticeHours','c_shoot','c_edit','c_client','s_shootsPerMonth','s_mileRate','s_cushion','s_roundTo','q_shootHours','q_editHours','q_miles','q_extras'].forEach(function(id){
+    ['p_client','p_date','p_time','p_location','p_people','p_photos','t_name','t_deposit','t_photosPerHour','t_reschedules','t_noticeHours','c_shoot','c_edit','c_client','s_shootsPerMonth','s_mileRate','s_cushion','s_extendedFee','q_extended','s_roundTo','q_shootHours','q_editHours','q_miles','q_extras'].forEach(function(id){
       var el = document.getElementById(id); var c = el.cloneNode(true); el.parentNode.replaceChild(c, el);
     });
     renderAll();
