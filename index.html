@@ -123,6 +123,7 @@
   .qrbox .btn{width:auto;margin:0;padding:8px 12px}
   .lines .plain{padding:8px 0;font-size:14px;color:var(--muted);border-bottom:1px dashed var(--line)}
   .lines .plain b{color:var(--ink)}
+  .version{text-align:center;font-size:11px;color:var(--muted);margin:28px 0 0;opacity:.8}
   .toast{position:fixed;left:50%;bottom:calc(24px + env(safe-area-inset-bottom,0px));transform:translateX(-50%) translateY(20px);background:var(--ink);color:var(--bg);padding:10px 16px;border-radius:999px;font-size:14px;opacity:0;transition:.25s;pointer-events:none}
   .toast.show{opacity:1;transform:translateX(-50%) translateY(0)}
   @media (prefers-reduced-motion: reduce){.toast{transition:none}}
@@ -339,11 +340,13 @@
       <button class="btn danger" id="resetBtn">Reset to defaults</button>
     </div>
   </section>
+  <p class="version" id="appVersion"></p>
 </div>
 <div class="toast" id="toast"></div>
 
 <script>
 (function(){
+  var APP_VERSION = '1.8';
   var KEY = 'shootPricing.v2';
   var THIS_YEAR = new Date().getFullYear();
   var YEAR_FRACTION = (new Date().getMonth() + 0.5) / 12; // how far into this year we are
@@ -1133,6 +1136,7 @@
   }
 
   renderAll();
+  document.getElementById('appVersion').textContent = 'Shoot Pricing v' + APP_VERSION;
 })();
 </script>
 </body>
