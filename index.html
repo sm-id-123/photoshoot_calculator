@@ -397,7 +397,7 @@
 
 <script>
 (function(){
-  var APP_VERSION = '3.0';
+  var APP_VERSION = '3.1';
   var KEY = 'shootPricing.v2';
   var THIS_YEAR = new Date().getFullYear();
   var YEAR_FRACTION = (new Date().getMonth() + 0.5) / 12; // how far into this year we are
@@ -1052,9 +1052,9 @@
   function eventTitle(){ return 'Photo session with ' + (S.terms.name || 'your photographer'); }
   function eventDetails(){
     var d = proposalData();
-    var ml = mapLinks();
-    var text = 'Photo session (' + sessionTypeLabel() + '). ' + plural(d.hours, 'hour') + ', at least ' + d.photos + ' edited photos.\nTotal ' + money0(d.price) + ', deposit ' + money0(d.deposit) + ' paid to hold the date, ' + money0(d.balance) + ' due on the day.';
-    if(ml){ text += '\n\nApple Maps: ' + ml.apple + '\nGoogle Maps: ' + ml.google; }
+    var ml = mapLinks(), text = '';
+    if(ml){ text += 'Apple Maps: ' + ml.apple + '\nGoogle Maps: ' + ml.google + '\n\n'; }
+    text += 'Photo session (' + sessionTypeLabel() + '). ' + plural(d.hours, 'hour') + ', at least ' + d.photos + ' edited photos.\nTotal ' + money0(d.price) + ', deposit ' + money0(d.deposit) + ' paid to hold the date, ' + money0(d.balance) + ' due on the day.';
     return text;
   }
   function googleCalLink(){
