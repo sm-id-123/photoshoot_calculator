@@ -133,6 +133,13 @@
   .lines .plain{padding:8px 0;font-size:14px;color:var(--muted);border-bottom:1px dashed var(--line)}
   .lines .plain b{color:var(--ink)}
   .version{text-align:center;font-size:11px;color:var(--muted);margin:28px 0 0;opacity:.8}
+  .row .btn{margin-top:12px}
+  .overlay{position:fixed;inset:0;background:var(--bg);z-index:50;display:none;flex-direction:column;padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}
+  .overlay.on{display:flex}
+  .overlay-bar{display:flex;align-items:center;gap:10px;padding:10px 12px;border-bottom:1px solid var(--line);background:var(--paper)}
+  .overlay-bar .btn{width:auto;margin:0;padding:8px 14px}
+  .overlay-bar span{flex:1;text-align:center;font-weight:600;font-size:15px}
+  .overlay iframe{flex:1;border:0;width:100%;background:#888}
   .toast{position:fixed;left:50%;bottom:calc(24px + env(safe-area-inset-bottom,0px));transform:translateX(-50%) translateY(20px);background:var(--ink);color:var(--bg);padding:10px 16px;border-radius:999px;font-size:14px;opacity:0;transition:.25s;pointer-events:none}
   .toast.show{opacity:1;transform:translateX(-50%) translateY(0)}
   @media (prefers-reduced-motion: reduce){.toast{transition:none}}
@@ -165,7 +172,7 @@
         <div><label>Amount</label><input type="number" inputmode="decimal" step="5" min="0" id="q_discount"></div>
         <div><label>Type</label><select id="q_discountType"><option value="pct">Percent off</option><option value="usd">Dollars off</option></select></div>
       </div>
-      <p class="hint" id="discountHint">Leave at 0 for no discount. Shows on the proposal as a line the client can see.</p>
+      <p class="hint" id="discountHint">Leave at 0 for no discount. Tick Discount under Show on the proposal if the client should see it.</p>
     </div>
 
     <div class="card">
@@ -203,10 +210,23 @@
       <p class="hint" id="p_photosHint"></p>
     </div>
 
+    <div class="card">
+      <h2>Show on the proposal</h2>
+      <p class="why">Tick what the client should see as its own line. The total is always shown.</p>
+      <label class="check"><input type="checkbox" id="sh_type"><span>Session type</span></label>
+      <label class="check"><input type="checkbox" id="sh_discount"><span>Discount (shows the price before and after)</span></label>
+      <label class="check"><input type="checkbox" id="sh_travel"><span>Travel (miles and cost)</span></label>
+      <label class="check"><input type="checkbox" id="sh_extras"><span>Extras, labeled as:</span></label>
+      <div class="row"><div><input type="text" id="q_extrasLabel" placeholder="Extras this shoot"></div></div>
+    </div>
+
     <div class="card proposal" id="proposalPreview"></div>
 
-    <button class="btn" id="copyProposal">Copy as text</button>
-    <button class="btn ghost" id="printProposal">Share as PDF</button>
+    <div class="row">
+      <button class="btn ghost" id="previewProposal">Preview PDF</button>
+      <button class="btn" id="printProposal">Share PDF</button>
+    </div>
+    <button class="btn ghost" id="copyProposal">Copy as text</button>
     <p class="hint">Save as PDF builds a real PDF and opens the share sheet, so you can text it, AirDrop it, or save it to Files. The first time you use it, the phone needs internet to fetch the PDF tool.</p>
 
     <div class="card">
@@ -215,7 +235,10 @@
       <div class="lines" id="afterPreview"></div>
     </div>
     <button class="btn" id="copyPayment">Copy payment and calendar text</button>
-    <button class="btn ghost" id="sharePaymentPdf">Share payment PDF (with QR code)</button>
+    <div class="row">
+      <button class="btn ghost" id="previewPaymentPdf">Preview payment PDF</button>
+      <button class="btn ghost" id="sharePaymentPdf">Share payment PDF</button>
+    </div>
     <button class="btn ghost" id="shareIcs">Share calendar file (.ics)</button>
     <p class="hint">The text includes a Venmo link and a Google Calendar link that work on any phone. The .ics file opens in Apple Calendar, Google Calendar, Samsung Calendar, and Outlook.</p>
   </section>
@@ -362,11 +385,19 @@
   </section>
   <p class="version" id="appVersion"></p>
 </div>
+<div class="overlay" id="pdfOverlay">
+  <div class="overlay-bar">
+    <button class="btn ghost" id="pdfClose">Close</button>
+    <span id="pdfTitle"></span>
+    <button class="btn" id="pdfShare">Share</button>
+  </div>
+  <iframe id="pdfFrame" title="PDF preview"></iframe>
+</div>
 <div class="toast" id="toast"></div>
 
 <script>
 (function(){
-  var APP_VERSION = '2.8';
+  var APP_VERSION = '3.0';
   var KEY = 'shootPricing.v2';
   var THIS_YEAR = new Date().getFullYear();
   var YEAR_FRACTION = (new Date().getMonth() + 0.5) / 12; // how far into this year we are
@@ -500,9 +531,9 @@
         {name:'Adobe Lightroom', amount:11.99, every:'month'},
         {name:'Website and client galleries', amount:10, every:'month'}
       ],
-      quote: {shootHours:0.5, editHours:2.5, miles:30, extras:0, selected:{}, discount:0, discountType:'pct'},
+      quote: {shootHours:0.5, editHours:2.5, miles:30, extras:0, extrasLabel:'', selected:{}, discount:0, discountType:'pct'},
       terms: {name:'Marisa Elise Photography', deposit:50, photosPerHour:30, reschedules:2, noticeHours:24, venmo:'', zellePhone:'', home:'', homeLat:null, homeLon:null},
-      proposal: {client:'', date:'', time:'', location:'', people:4, photos:''}
+      proposal: {client:'', date:'', time:'', location:'', people:4, photos:'', show:{type:true, discount:false, travel:false, extras:false}}
     };
   }
 
@@ -521,6 +552,7 @@
     d.conf = o.conf || d.conf;
     d.terms = o.terms || d.terms;
     d.proposal = o.proposal || d.proposal;
+    if(!d.proposal.show) d.proposal.show = {type:true, discount:false, travel:false, extras:false};
     if(!o.addons){ d.addons = defaults().addons; if(o.extendedFee !== undefined) d.addons[0].amount = num(o.extendedFee); }
     if(!d.quote.selected){ d.quote.selected = {}; if(d.quote.extended) d.quote.selected.extended = true; }
     delete d.extendedFee; delete d.quote.extended;
@@ -605,7 +637,7 @@
     var dh = document.getElementById('discountHint');
     if(c.discount > 0 && c.price < c.floor) dh.textContent = 'Careful: ' + money0(c.price) + ' is below your ' + money0(c.floor) + ' floor, so this session loses money on paper.';
     else if(c.discount > 0) dh.textContent = money0(c.listPrice) + ' before the discount, ' + money0(c.price) + ' after.';
-    else dh.textContent = 'Leave at 0 for no discount. Shows on the proposal as a line the client can see.';
+    else dh.textContent = 'Leave at 0 for no discount. Tick Discount under Show on the proposal if the client should see it.';
     var html = '';
     for(var i=0;i<lines.length;i++){
       html += '<li><span>' + esc(lines[i][0]) + (lines[i][1] ? '<em>' + esc(lines[i][1]) + '</em>' : '') + '</span><span>' + money(lines[i][2]) + '</span></li>';
@@ -803,6 +835,7 @@
       client: p.client || 'you', date: niceDate(p.date), time: niceTime(p.time), location: p.location,
       people: num(p.people), photos: photosPromised(), hours: num(S.quote.shootHours),
       price: c.price, listPrice: c.listPrice, discount: c.discount, deposit: deposit, balance: c.price - deposit,
+      miles: num(S.quote.miles), travel: c.travel, extras: c.extras, extrasLabel: (S.quote.extrasLabel || '').trim() || 'Extras this shoot',
       reschedules: Math.max(0, Math.round(num(t.reschedules))), notice: Math.max(0, Math.round(num(t.noticeHours))),
       name: t.name || 'me'
     };
@@ -819,19 +852,25 @@
     out.push('If all of this sounds good, just confirm by text and I’ll send over my Venmo code for the deposit. I can’t wait to work with you!');
     return out;
   }
-  function renderProposal(){
-    var d = proposalData();
-    document.getElementById('p_photosHint').textContent = 'Leave photos blank to use ' + num(S.terms.photosPerHour, 25) + ' per hour of shooting (' + Math.max(1, Math.round(num(S.quote.shootHours) * num(S.terms.photosPerHour, 25))) + ' for this session). Change the per-hour number in Setup.';
-    var rows = [];
+  function proposalRows(d){
+    var sh = S.proposal.show || {}, rows = [];
     if(d.date) rows.push(['Date', d.date]);
     if(d.time) rows.push(['Time', d.time]);
     if(d.location) rows.push(['Location', d.location]);
-    rows.push(['Session type', sessionTypeLabel()]);
+    if(sh.type) rows.push(['Session type', sessionTypeLabel()]);
     rows.push(['Session length', plural(d.hours, 'hour')]);
     rows.push(['People in the photos', d.people]);
-    rows.push(['Edited photos you’ll receive', 'At least ' + d.photos]);
-    if(d.discount > 0){ rows.push(['Session price', money0(d.listPrice)]); rows.push(['Your discount', '\u2212 ' + money0(d.discount)]); }
+    rows.push(['Edited photos you\u2019ll receive', 'At least ' + d.photos]);
+    if(sh.travel && d.miles > 0) rows.push(['Travel', d.miles + ' miles round trip, ' + money0(d.travel)]);
+    if(sh.extras && d.extras > 0) rows.push([d.extrasLabel, money0(d.extras)]);
+    if(sh.discount && d.discount > 0){ rows.push(['Session price', money0(d.listPrice)]); rows.push(['Your discount', '\u2212 ' + money0(d.discount)]); }
     rows.push(['Deposit to hold the date', money0(d.deposit)]);
+    return rows;
+  }
+  function renderProposal(){
+    var d = proposalData();
+    document.getElementById('p_photosHint').textContent = 'Leave photos blank to use ' + num(S.terms.photosPerHour, 25) + ' per hour of shooting (' + Math.max(1, Math.round(num(S.quote.shootHours) * num(S.terms.photosPerHour, 25))) + ' for this session). Change the per-hour number in Setup.';
+    var rows = proposalRows(d);
     var dl = '';
     for(var i=0;i<rows.length;i++) dl += '<dt>' + esc(rows[i][0]) + '</dt><dd>' + esc(String(rows[i][1])) + '</dd>';
     var terms = termsSentences(d).map(function(x){ return '<p>' + esc(x) + '</p>'; }).join('');
@@ -848,16 +887,11 @@
     L.push('Photo session for ' + d.client);
     L.push('A proposal from ' + d.name);
     L.push('');
-    if(d.date) L.push('Date: ' + d.date);
-    if(d.time) L.push('Time: ' + d.time);
-    if(d.location) L.push('Location: ' + d.location);
-    L.push('Session type: ' + sessionTypeLabel());
-    L.push('Session length: ' + plural(d.hours, 'hour'));
-    L.push('People in the photos: ' + d.people);
-    L.push('Edited photos you’ll receive: at least ' + d.photos);
-    if(d.discount > 0){ L.push('Session price: ' + money0(d.listPrice)); L.push('Your discount: -' + money0(d.discount)); }
-    L.push('Total for the session: ' + money0(d.price));
-    L.push('Deposit to hold the date: ' + money0(d.deposit));
+    var rows = proposalRows(d);
+    for(var i=0;i<rows.length;i++){
+      if(rows[i][0] === 'Deposit to hold the date') L.push('Total for the session: ' + money0(d.price));
+      L.push(rows[i][0] + ': ' + rows[i][1]);
+    }
     L.push('');
     L = L.concat(termsSentences(d).join('\n\n').split('\n'));
     return L.join('\n');
@@ -932,26 +966,40 @@
   }
   function safeName(s){ return String(s || 'session').replace(/[^a-z0-9]+/gi, '-').replace(/^-|-$/g, '').toLowerCase() || 'session'; }
 
-  document.getElementById('printProposal').addEventListener('click', function(){
-    if(!pdfReady()){ toast('PDF tool not loaded. Connect to internet and reload once.'); return; }
+  function buildProposalPdf(){
     var d = proposalData();
     var doc = newDoc();
     var y = pdfHeader(doc, 'Photo session for ' + d.client, 'A proposal from ' + d.name);
-    var rows = [];
-    if(d.date) rows.push(['Date', d.date]);
-    if(d.time) rows.push(['Time', d.time]);
-    if(d.location) rows.push(['Location', d.location]);
-    rows.push(['Session type', sessionTypeLabel()]);
-    rows.push(['Session length', plural(d.hours, 'hour')]);
-    rows.push(['People in the photos', d.people]);
-    rows.push(['Edited photos you\u2019ll receive', 'At least ' + d.photos]);
-    if(d.discount > 0){ rows.push(['Session price', money0(d.listPrice)]); rows.push(['Your discount', '- ' + money0(d.discount)]); }
-    rows.push(['Deposit to hold the date', money0(d.deposit)]);
-    y = pdfRows(doc, y, rows) + 10;
+    y = pdfRows(doc, y, proposalRows(d)) + 10;
     y = pdfPriceBox(doc, y, 'Total for the session', money0(d.price));
     doc.setDrawColor(214, 221, 216); doc.setLineDashPattern([2, 2], 0); doc.line(54, y, 558, y); y += 20;
     pdfParas(doc, y, termsSentences(d));
-    shareFile(doc.output('blob'), 'proposal-' + safeName(S.proposal.client) + '.pdf', 'application/pdf', 'Session proposal');
+    return {doc:doc, name:'proposal-' + safeName(S.proposal.client) + '.pdf', title:'Session proposal'};
+  }
+  /* ---------- PDF preview overlay ---------- */
+  var currentPdf = null, currentUrl = null;
+  function openPreview(built){
+    if(currentUrl){ try{ URL.revokeObjectURL(currentUrl); }catch(e){} }
+    currentPdf = built; var blob = built.doc.output('blob');
+    currentPdf.blob = blob; currentUrl = URL.createObjectURL(blob);
+    document.getElementById('pdfTitle').textContent = built.title;
+    document.getElementById('pdfFrame').src = currentUrl;
+    document.getElementById('pdfOverlay').classList.add('on');
+  }
+  document.getElementById('pdfClose').addEventListener('click', function(){
+    document.getElementById('pdfOverlay').classList.remove('on');
+    document.getElementById('pdfFrame').src = 'about:blank';
+  });
+  document.getElementById('pdfShare').addEventListener('click', function(){
+    if(currentPdf) shareFile(currentPdf.blob, currentPdf.name, 'application/pdf', currentPdf.title);
+  });
+  document.getElementById('previewProposal').addEventListener('click', function(){
+    if(!pdfReady()){ toast('PDF tool not loaded. Connect to internet and reload once.'); return; }
+    openPreview(buildProposalPdf());
+  });
+  document.getElementById('printProposal').addEventListener('click', function(){
+    if(!pdfReady()){ toast('PDF tool not loaded. Connect to internet and reload once.'); return; }
+    var b = buildProposalPdf(); shareFile(b.doc.output('blob'), b.name, 'application/pdf', b.title);
   });
 
   /* ---------- after they confirm: payment + calendar ---------- */
@@ -1196,8 +1244,7 @@
     box.innerHTML = html;
   }
   document.getElementById('copyPayment').addEventListener('click', function(){ copyText(paymentText(), 'Copied. Paste it into a text.'); });
-  document.getElementById('sharePaymentPdf').addEventListener('click', function(){
-    if(!pdfReady()){ toast('PDF tool not loaded. Connect to internet and reload once.'); return; }
+  function buildDepositPdf(){
     var d = proposalData(), doc = newDoc();
     var y = pdfHeader(doc, 'Deposit for your session', (S.terms.name || '') );
     var rows = [];
@@ -1243,7 +1290,15 @@
     }
     doc.setFont('helvetica', 'normal'); doc.setFontSize(9); doc.setTextColor(94, 107, 100);
     doc.text('Calendar invite sent separately.', 306, 740, {align:'center'});
-    shareFile(doc.output('blob'), 'deposit-' + safeName(S.proposal.client) + '.pdf', 'application/pdf', 'Deposit details');
+    return {doc:doc, name:'deposit-' + safeName(S.proposal.client) + '.pdf', title:'Deposit details'};
+  }
+  document.getElementById('previewPaymentPdf').addEventListener('click', function(){
+    if(!pdfReady()){ toast('PDF tool not loaded. Connect to internet and reload once.'); return; }
+    openPreview(buildDepositPdf());
+  });
+  document.getElementById('sharePaymentPdf').addEventListener('click', function(){
+    if(!pdfReady()){ toast('PDF tool not loaded. Connect to internet and reload once.'); return; }
+    var b = buildDepositPdf(); shareFile(b.doc.output('blob'), b.name, 'application/pdf', b.title);
   });
   document.getElementById('shareIcs').addEventListener('click', function(){
     var t = icsText(); if(!t){ toast('Add a date to the session first.'); return; }
@@ -1257,6 +1312,11 @@
     bindText('p_location', S.proposal, 'location', renderProposal);
     bindNum('p_people', S.proposal, 'people', renderProposal);
     bindNum('p_photos', S.proposal, 'photos', renderProposal);
+    bindText('q_extrasLabel', S.quote, 'extrasLabel', renderProposal);
+    ['type','discount','travel','extras'].forEach(function(k){
+      var el = document.getElementById('sh_' + k); el.checked = !!S.proposal.show[k];
+      el.addEventListener('change', function(){ S.proposal.show[k] = el.checked; save(); renderProposal(); });
+    });
     bindText('t_name', S.terms, 'name', renderProposal);
     bindNum('t_deposit', S.terms, 'deposit', renderProposal);
     bindNum('t_photosPerHour', S.terms, 'photosPerHour', renderProposal);
@@ -1335,7 +1395,7 @@
     if(confirm('Reset every setting to the starting defaults?')){ S = defaults(); save(); rebuild(); toast('Reset to defaults.'); }
   });
   function rebuild(){
-    ['p_client','p_date','p_time','p_location','p_people','p_photos','t_name','t_deposit','t_photosPerHour','t_reschedules','t_noticeHours','c_shoot','c_edit','c_client','s_shootsPerMonth','s_mileRate','s_cushion','t_home','t_zellePhone','t_zelleQrFile','q_discount','q_discountType','t_venmo','t_qrFile','s_roundTo','q_shootHours','q_editHours','q_miles','q_extras'].forEach(function(id){
+    ['p_client','p_date','p_time','p_location','p_people','p_photos','q_extrasLabel','sh_type','sh_discount','sh_travel','sh_extras','t_name','t_deposit','t_photosPerHour','t_reschedules','t_noticeHours','c_shoot','c_edit','c_client','s_shootsPerMonth','s_mileRate','s_cushion','t_home','t_zellePhone','t_zelleQrFile','q_discount','q_discountType','t_venmo','t_qrFile','s_roundTo','q_shootHours','q_editHours','q_miles','q_extras'].forEach(function(id){
       var el = document.getElementById(id); var c = el.cloneNode(true); el.parentNode.replaceChild(c, el);
     });
     renderAll();
