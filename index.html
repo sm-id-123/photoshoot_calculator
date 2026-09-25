@@ -91,6 +91,13 @@
   .scale-text{margin:4px 0 0;font-size:14px;color:var(--muted);min-height:2.8em}
   .check{display:flex;align-items:center;gap:10px;margin-top:14px;font-size:15px;color:var(--ink);cursor:pointer}
   .check input{width:22px;height:22px;margin:0;padding:0;-webkit-appearance:checkbox;appearance:checkbox;accent-color:var(--green);flex:0 0 auto}
+  .suggest-wrap{position:relative}
+  .suggest{position:absolute;left:0;right:0;top:100%;z-index:5;background:var(--paper);border:1px solid var(--line);border-radius:10px;box-shadow:0 6px 18px rgba(0,0,0,.12);margin-top:4px;overflow:hidden;display:none}
+  .suggest.on{display:block}
+  .suggest div{padding:10px 12px;font-size:15px;border-bottom:1px solid var(--line);cursor:pointer}
+  .suggest div:last-child{border-bottom:0}
+  .suggest div small{display:block;color:var(--muted);font-size:13px}
+  .suggest div:active{background:var(--green-soft)}
   .payout{display:flex;align-items:center;gap:14px;margin-top:16px;padding:12px 14px;background:var(--green-soft);border-radius:12px}
   .payrate{font-family:"Iowan Old Style","Palatino Linotype",Palatino,Georgia,serif;font-size:34px;font-weight:600;line-height:1;color:var(--green)}
   .payrate small{font-size:14px;font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Helvetica,Arial,sans-serif;color:var(--muted);margin-left:2px}
@@ -188,7 +195,7 @@
         <div><label>Time</label><input type="time" id="p_time"></div>
       </div>
       <div class="row">
-        <div><label>Location</label><input type="text" id="p_location" placeholder="Riverside Park, main gazebo"></div>
+        <div class="suggest-wrap"><label>Location</label><input type="text" id="p_location" placeholder="Start typing an address or park" autocomplete="off" autocorrect="off"><div class="suggest" id="locSuggest"></div></div>
       </div>
       <div class="row">
         <div><label>People in the photos</label><input type="number" inputmode="numeric" step="1" min="1" id="p_people"></div>
@@ -353,7 +360,7 @@
 
 <script>
 (function(){
-  var APP_VERSION = '2.3';
+  var APP_VERSION = '2.4';
   var KEY = 'shootPricing.v2';
   var THIS_YEAR = new Date().getFullYear();
   var YEAR_FRACTION = (new Date().getMonth() + 0.5) / 12; // how far into this year we are
@@ -992,7 +999,8 @@
   function eventTitle(){ return 'Photo session with ' + (S.terms.name || 'your photographer'); }
   function eventDetails(){
     var d = proposalData();
-    return 'Photo session (' + sessionTypeLabel() + '). ' + plural(d.hours, 'hour') + ', at least ' + d.photos + ' edited photos. Total ' + money0(d.price) + ', deposit ' + money0(d.deposit) + ' paid to hold the date, ' + money0(d.balance) + ' due on the day.';
+    var ml = mapLinks();
+    return 'Photo session (' + sessionTypeLabel() + '). ' + plural(d.hours, 'hour') + ', at least ' + d.photos + ' edited photos. Total ' + money0(d.price) + ', deposit ' + money0(d.deposit) + ' paid to hold the date, ' + money0(d.balance) + ' due on the day.' + (ml ? ' Directions: ' + ml.apple + ' or ' + ml.google : '');
   }
   function googleCalLink(){
     var sd = sessionDates(); if(!sd) return '';
@@ -1050,6 +1058,8 @@
     L.push('');
     if(d.date) L.push('When: ' + d.date + (d.time ? ' at ' + d.time : ''));
     if(d.location) L.push('Where: ' + d.location);
+    var ml = mapLinks();
+    if(ml){ L.push('Directions (Apple Maps): ' + ml.apple); L.push('Directions (Google Maps): ' + ml.google); }
     L.push('Total: ' + money0(d.price) + ' (' + money0(d.deposit) + ' deposit now, ' + money0(d.balance) + ' on the day)');
     L.push('');
     if(venmoUser()){ L.push('Deposit by Venmo: @' + venmoUser()); L.push(venmoLink()); }
@@ -1064,6 +1074,57 @@
     L.push(''); L.push('Can\u2019t wait to see you!' + (S.terms.name ? ' \u2014 ' + S.terms.name : ''));
     return L.join('\n');
   }
+  /* ---------- location suggestions (Photon / OpenStreetMap) ---------- */
+  var locTimer = null, locBias = null;
+  try{ if(navigator.geolocation){ navigator.geolocation.getCurrentPosition(function(pos){ locBias = {lat:pos.coords.latitude, lon:pos.coords.longitude}; }, function(){}, {maximumAge:3600000, timeout:5000}); } }catch(e){}
+  function photonLabel(f){
+    var pr = f.properties || {}, main = pr.name || '', line2 = [];
+    var street = [pr.housenumber, pr.street].filter(Boolean).join(' ');
+    if(!main && street){ main = street; street = ''; }
+    if(street) line2.push(street);
+    if(pr.city || pr.town || pr.village) line2.push(pr.city || pr.town || pr.village);
+    if(pr.state) line2.push(pr.state);
+    if(pr.postcode) line2.push(pr.postcode);
+    return {main:main, sub:line2.join(', ')};
+  }
+  function showLocSuggest(items){
+    var box = document.getElementById('locSuggest');
+    if(!items.length){ box.classList.remove('on'); box.innerHTML = ''; return; }
+    box.innerHTML = '';
+    items.forEach(function(it){
+      var d = document.createElement('div');
+      d.innerHTML = esc(it.main) + (it.sub ? '<small>' + esc(it.sub) + '</small>' : '');
+      d.addEventListener('mousedown', function(ev){ ev.preventDefault(); });
+      d.addEventListener('click', function(){
+        var full = it.sub ? it.main + ', ' + it.sub : it.main;
+        var el = document.getElementById('p_location'); el.value = full; S.proposal.location = full; save();
+        box.classList.remove('on'); renderProposal(); renderAfter();
+      });
+      box.appendChild(d);
+    });
+    box.classList.add('on');
+  }
+  function fetchLocSuggest(q){
+    if(!window.fetch || q.length < 3){ showLocSuggest([]); return; }
+    var url = 'https://photon.komoot.io/api/?limit=5&lang=en&q=' + encodeURIComponent(q);
+    if(locBias) url += '&lat=' + locBias.lat + '&lon=' + locBias.lon + '&zoom=10&location_bias_scale=0.4';
+    fetch(url).then(function(r){ return r.json(); }).then(function(j){
+      var items = [], seen = {};
+      (j.features || []).forEach(function(f){ var l = photonLabel(f); var key = l.main + '|' + l.sub; if(l.main && !seen[key]){ seen[key] = 1; items.push(l); } });
+      showLocSuggest(items);
+    }).catch(function(){ showLocSuggest([]); });
+  }
+  (function(){
+    var el = document.getElementById('p_location'), box = document.getElementById('locSuggest');
+    el.addEventListener('input', function(){ clearTimeout(locTimer); var q = el.value.trim(); locTimer = setTimeout(function(){ fetchLocSuggest(q); }, 300); });
+    el.addEventListener('blur', function(){ setTimeout(function(){ box.classList.remove('on'); }, 150); });
+    el.addEventListener('focus', function(){ if(box.innerHTML) box.classList.add('on'); });
+  })();
+  function mapLinks(){
+    var loc = String(S.proposal.location || '').trim(); if(!loc) return null;
+    return {apple:'https://maps.apple.com/?q=' + encodeURIComponent(loc), google:'https://www.google.com/maps/search/?api=1&query=' + encodeURIComponent(loc)};
+  }
+
   function renderAfter(){
     var box = document.getElementById('afterPreview'); if(!box) return;
     var d = proposalData();
