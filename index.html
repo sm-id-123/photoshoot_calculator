@@ -138,7 +138,6 @@
   @media (prefers-reduced-motion: reduce){.toast{transition:none}}
 </style>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
-<script src="https://cdnjs.cloudflare.com/ajax/libs/qrcode-generator/1.4.4/qrcode.min.js"></script>
 </head>
 <body>
 <div class="wrap">
@@ -308,13 +307,13 @@
       </div>
       <div id="qrPreview" class="qrbox"></div>
       <div class="row">
-        <div><label>Zelle QR link (from your banking app)</label><input type="text" id="t_zelleLink" placeholder="https://enroll.zellepay.com/qr-codes?data=..." autocapitalize="none" autocorrect="off"></div>
-      </div>
-      <div class="row">
         <div><label>Zelle phone number</label><input type="tel" inputmode="tel" id="t_zellePhone" placeholder="555-123-4567"></div>
       </div>
+      <div class="row">
+        <div><label>Zelle QR code image</label><input type="file" accept="image/*" id="t_zelleQrFile"></div>
+      </div>
       <div id="zellePreview" class="qrbox"></div>
-      <p class="hint">In your banking app, open Zelle, tap your QR code, and use Share or Copy Link. Paste that link here and the app draws the same QR code on the deposit PDF, which other banking apps can scan. The phone number is shown next to it; if you leave it blank it is read from the link.</p>
+      <p class="hint">In your banking app, open Zelle, tap your QR code, and save or screenshot it. Upload it here and it appears on the deposit PDF next to Venmo. Like the Venmo image, it stays on this phone and is not part of the Backup text. Leave both Zelle fields blank to hide Zelle.</p>
       <p class="hint">In Venmo: tap your profile, then the QR icon, then Share, and save the image to Photos. Upload it here. The image stays on this phone only and is not part of the Backup text, so re-upload it after a restore.</p>
     </div>
 
@@ -367,7 +366,7 @@
 
 <script>
 (function(){
-  var APP_VERSION = '2.7';
+  var APP_VERSION = '2.8';
   var KEY = 'shootPricing.v2';
   var THIS_YEAR = new Date().getFullYear();
   var YEAR_FRACTION = (new Date().getMonth() + 0.5) / 12; // how far into this year we are
@@ -502,7 +501,7 @@
         {name:'Website and client galleries', amount:10, every:'month'}
       ],
       quote: {shootHours:0.5, editHours:2.5, miles:30, extras:0, selected:{}, discount:0, discountType:'pct'},
-      terms: {name:'Marisa Elise Photography', deposit:50, photosPerHour:30, reschedules:2, noticeHours:24, venmo:'', zellePhone:'', zelleLink:'', home:'', homeLat:null, homeLon:null},
+      terms: {name:'Marisa Elise Photography', deposit:50, photosPerHour:30, reschedules:2, noticeHours:24, venmo:'', zellePhone:'', home:'', homeLat:null, homeLon:null},
       proposal: {client:'', date:'', time:'', location:'', people:4, photos:''}
     };
   }
@@ -958,7 +957,7 @@
   /* ---------- after they confirm: payment + calendar ---------- */
   var QR_KEY = 'shootPricing.qr';
   function getQr(){ try{ return localStorage.getItem(QR_KEY) || ''; }catch(e){ return ''; } }
-  function storeQr(file){
+  function storeImage(file, key, after){
     var reader = new FileReader();
     reader.onload = function(){
       var img = new Image();
@@ -967,48 +966,29 @@
         var cv = document.createElement('canvas'); cv.width = Math.round(w*sc); cv.height = Math.round(h*sc);
         var ctx = cv.getContext('2d'); ctx.fillStyle = '#fff'; ctx.fillRect(0,0,cv.width,cv.height); ctx.drawImage(img, 0, 0, cv.width, cv.height);
         var data = cv.toDataURL('image/jpeg', 0.85);
-        try{ localStorage.setItem(QR_KEY, data); toast('QR code saved.'); }catch(e){ toast('Image too large to save. Try a smaller screenshot.'); }
-        renderQr(); renderAfter();
+        try{ localStorage.setItem(key, data); toast('QR code saved.'); }catch(e){ toast('Image too large to save. Try a smaller screenshot.'); }
+        after();
       };
       img.src = reader.result;
     };
     reader.readAsDataURL(file);
   }
+  function storeQr(file){ storeImage(file, QR_KEY, function(){ renderQr(); renderAfter(); }); }
   function renderQr(){
     var box = document.getElementById('qrPreview'); var q = getQr();
     if(!q){ box.innerHTML = '<span class="hint">No QR code uploaded yet.</span>'; return; }
     box.innerHTML = '<img src="' + q + '" alt="Venmo QR code"><button class="btn danger" id="qrRemove">Remove</button>';
     document.getElementById('qrRemove').addEventListener('click', function(){ try{ localStorage.removeItem(QR_KEY); }catch(e){} renderQr(); renderAfter(); });
   }
-  function zelleLink(){ var l = String(S.terms.zelleLink || '').trim(); return /^https?:\/\//i.test(l) ? l : ''; }
-  function zelleFromLink(){
-    var l = zelleLink(); if(!l) return null;
-    try{
-      var m = l.match(/[?&]data=([^&#]+)/); if(!m) return null;
-      var json = decodeURIComponent(escape(atob(decodeURIComponent(m[1]))));
-      var o = JSON.parse(json); return o && o.token ? o : null;
-    }catch(e){ return null; }
-  }
-  function formatPhone(t){
-    var d = String(t).replace(/\D/g, '');
-    if(d.length === 11 && d.charAt(0) === '1') d = d.slice(1);
-    if(d.length === 10) return '(' + d.slice(0,3) + ') ' + d.slice(3,6) + '-' + d.slice(6);
-    return String(t);
-  }
-  function zellePhone(){
-    var p = String(S.terms.zellePhone || '').trim(); if(p) return p;
-    var o = zelleFromLink(); return o ? (String(o.token).indexOf('@') >= 0 ? o.token : formatPhone(o.token)) : '';
-  }
-  function zelleQrImage(){
-    if(!window.qrcode || !zelleLink()) return '';
-    try{ var q = window.qrcode(0, 'M'); q.addData(zelleLink()); q.make(); return q.createDataURL(6, 8); }catch(e){ return ''; }
-  }
+  var ZQR_KEY = 'shootPricing.zelleqr';
+  function getZelleQr(){ try{ return localStorage.getItem(ZQR_KEY) || ''; }catch(e){ return ''; } }
+  function zellePhone(){ return String(S.terms.zellePhone || '').trim(); }
   function renderZelle(){
     var box = document.getElementById('zellePreview'); if(!box) return;
-    var img = zelleQrImage(), o = zelleFromLink();
-    if(!zelleLink()){ box.innerHTML = '<span class="hint">No Zelle link yet.</span>'; return; }
-    if(!o){ box.innerHTML = '<span class="hint">That link does not look like a Zelle QR link. It should start with https://enroll.zellepay.com/qr-codes?data=</span>'; return; }
-    box.innerHTML = (img ? '<img src="' + img + '" alt="Zelle QR code">' : '') + '<span class="hint">Reads as ' + esc(o.name || '') + (o.token ? ', ' + esc(zellePhone()) : '') + '</span>';
+    var q = getZelleQr();
+    if(!q){ box.innerHTML = '<span class="hint">No Zelle QR code uploaded yet.</span>'; return; }
+    box.innerHTML = '<img src="' + q + '" alt="Zelle QR code"><button class="btn danger" id="zqrRemove">Remove</button>';
+    document.getElementById('zqrRemove').addEventListener('click', function(){ try{ localStorage.removeItem(ZQR_KEY); }catch(e){} renderZelle(); renderAfter(); });
   }
   function venmoUser(){ return String(S.terms.venmo || '').replace(/^@/, '').trim(); }
   function venmoLink(){ return venmoUser() ? 'https://venmo.com/u/' + venmoUser() : ''; }
@@ -1025,7 +1005,9 @@
   function eventDetails(){
     var d = proposalData();
     var ml = mapLinks();
-    return 'Photo session (' + sessionTypeLabel() + '). ' + plural(d.hours, 'hour') + ', at least ' + d.photos + ' edited photos. Total ' + money0(d.price) + ', deposit ' + money0(d.deposit) + ' paid to hold the date, ' + money0(d.balance) + ' due on the day.' + (ml ? ' Directions: ' + ml.apple + ' or ' + ml.google : '');
+    var text = 'Photo session (' + sessionTypeLabel() + '). ' + plural(d.hours, 'hour') + ', at least ' + d.photos + ' edited photos.\nTotal ' + money0(d.price) + ', deposit ' + money0(d.deposit) + ' paid to hold the date, ' + money0(d.balance) + ' due on the day.';
+    if(ml){ text += '\n\nApple Maps: ' + ml.apple + '\nGoogle Maps: ' + ml.google; }
+    return text;
   }
   function googleCalLink(){
     var sd = sessionDates(); if(!sd) return '';
@@ -1065,7 +1047,7 @@
     var out = [], cur = '', bytes = 0;
     for(var i=0;i<line.length;i++){
       var ch = line.charAt(i), b = encodeURIComponent(ch).split('%').length - 1; if(b === 0) b = 1;
-      if(bytes + b > 74){ out.push(cur); cur = ' ' + ch; bytes = 1 + b; }
+      if(bytes + b > 74 && ch !== ',' && ch !== ';' && ch !== 'n' && ch !== '\\'){ out.push(cur); cur = ' ' + ch; bytes = 1 + b; }
       else { cur += ch; bytes += b; }
     }
     out.push(cur);
@@ -1078,7 +1060,7 @@
     var stampUtc = now.getUTCFullYear() + pad(now.getUTCMonth()+1) + pad(now.getUTCDate()) + 'T' + pad(now.getUTCHours()) + pad(now.getUTCMinutes()) + pad(now.getUTCSeconds()) + 'Z';
     return ['BEGIN:VCALENDAR','VERSION:2.0','PRODID:-//Shoot Pricing//EN','CALSCALE:GREGORIAN','METHOD:PUBLISH',
       'BEGIN:VEVENT',
-      'UID:' + stampLocal(sd.start) + '-' + safeName(S.proposal.client) + '@shootpricing',
+      'UID:' + stampLocal(sd.start) + '-' + safeName(S.proposal.client) + '-' + now.getTime().toString(36) + '@shootpricing',
       'DTSTAMP:' + stampUtc,
       'DTSTART:' + stampLocal(sd.start),
       'DTEND:' + stampLocal(sd.end),
@@ -1208,7 +1190,7 @@
     var html = '';
     html += '<div class="plain">Venmo: ' + (venmoUser() ? '<b>@' + esc(venmoUser()) + '</b>' : '<b>not set</b> (add it in Setup)') + '</div>';
     html += '<div class="plain">QR code: <b>' + (getQr() ? 'uploaded' : 'not uploaded') + '</b></div>';
-    html += '<div class="plain">Zelle: ' + (zellePhone() ? '<b>' + esc(zellePhone()) + '</b>' : '<b>not set</b> (optional, add it in Setup)') + '</div>';
+    html += '<div class="plain">Zelle: ' + (zellePhone() ? '<b>' + esc(zellePhone()) + '</b>' : '<b>not set</b> (optional, add it in Setup)') + ', QR code: <b>' + (getZelleQr() ? 'uploaded' : 'not uploaded') + '</b></div>';
     html += '<div class="plain">Deposit due now: <b>' + money0(d.deposit) + '</b>, balance on the day: <b>' + money0(d.balance) + '</b></div>';
     html += '<div class="plain">Calendar: <b>' + (S.proposal.date ? d.date + (d.time ? ' at ' + d.time : '') : 'add a date above') + '</b></div>';
     box.innerHTML = html;
@@ -1230,7 +1212,7 @@
     doc.text('Send the ' + money0(d.deposit) + ' deposit with either option', 306, y, {align:'center'}); y += 22;
     var methods = [];
     if(venmoUser() || getQr()) methods.push({title:'Venmo', qr:getQr(), qrType:'JPEG', id: venmoUser() ? '@' + venmoUser() : '', note:'Scan in the Venmo app or search the username.', button:'Pay on Venmo', url: venmoLink()});
-    if(zellePhone() || zelleLink()) methods.push({title:'Zelle', qr:zelleQrImage(), qrType:'PNG', id: zellePhone(), sub: (zelleFromLink() && zelleFromLink().name) ? zelleFromLink().name : '', note: zelleQrImage() ? 'Scan from your banking app\u2019s Zelle screen, or send to this number.' : 'Open your banking app, choose Zelle, and send to this phone number.', button:'', url:''});
+    if(zellePhone() || getZelleQr()) methods.push({title:'Zelle', qr:getZelleQr(), qrType:'JPEG', id: zellePhone(), sub:'', note: getZelleQr() ? 'Scan from your banking app\u2019s Zelle screen, or send to this number.' : 'Open your banking app, choose Zelle, and send to this phone number.', button:'', url:''});
     var colW = 232, gap = 40, total = methods.length * colW + (methods.length - 1) * gap, x0 = 306 - total/2, topY = y;
     for(var m=0;m<methods.length;m++){
       var M = methods[m], cx = x0 + m * (colW + gap) + colW/2, yy = topY;
@@ -1295,8 +1277,9 @@
     renderQr(); renderAfter();
     bindText('t_home', S.terms, 'home');
     attachAllSuggest(); renderHomeHint();
-    bindText('t_zellePhone','t_zelleLink', S.terms, 'zellePhone', function(){ renderZelle(); renderAfter(); });
-    bindText('t_zelleLink', S.terms, 'zelleLink', function(){ renderZelle(); renderAfter(); });
+    bindText('t_zellePhone', S.terms, 'zellePhone', renderAfter);
+    (function(){ var f = document.getElementById('t_zelleQrFile');
+      f.addEventListener('change', function(){ if(f.files && f.files[0]) storeImage(f.files[0], ZQR_KEY, function(){ renderZelle(); renderAfter(); }); }); })();
     renderZelle();
     bindSimple('s_roundTo', S, 'roundTo');
     bindSimple('q_shootHours', S.quote, 'shootHours');
@@ -1352,7 +1335,7 @@
     if(confirm('Reset every setting to the starting defaults?')){ S = defaults(); save(); rebuild(); toast('Reset to defaults.'); }
   });
   function rebuild(){
-    ['p_client','p_date','p_time','p_location','p_people','p_photos','t_name','t_deposit','t_photosPerHour','t_reschedules','t_noticeHours','c_shoot','c_edit','c_client','s_shootsPerMonth','s_mileRate','s_cushion','t_home','t_zellePhone','t_zelleLink','q_discount','q_discountType','t_venmo','t_qrFile','s_roundTo','q_shootHours','q_editHours','q_miles','q_extras'].forEach(function(id){
+    ['p_client','p_date','p_time','p_location','p_people','p_photos','t_name','t_deposit','t_photosPerHour','t_reschedules','t_noticeHours','c_shoot','c_edit','c_client','s_shootsPerMonth','s_mileRate','s_cushion','t_home','t_zellePhone','t_zelleQrFile','q_discount','q_discountType','t_venmo','t_qrFile','s_roundTo','q_shootHours','q_editHours','q_miles','q_extras'].forEach(function(id){
       var el = document.getElementById(id); var c = el.cloneNode(true); el.parentNode.replaceChild(c, el);
     });
     renderAll();
