@@ -66,8 +66,10 @@
   .hint{font-size:13px;color:var(--muted);margin-top:6px}
   .money{position:relative}
   .money input{padding-left:24px}
-  .money::before{content:"$";position:absolute;left:11px;top:34px;color:var(--muted);font-size:16px}
-  .money.nolabel::before{top:11px}
+  .money input{background-image:url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='14' height='24'><text x='1' y='12' dominant-baseline='central' font-family='-apple-system,Helvetica,Arial,sans-serif' font-size='16' fill='%235E6B64'>$</text></svg>");background-repeat:no-repeat;background-position:10px center;background-size:14px 24px}
+  @media (prefers-color-scheme: dark){
+    :root:not([data-theme="light"]) .money input{background-image:url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='14' height='24'><text x='1' y='12' dominant-baseline='central' font-family='-apple-system,Helvetica,Arial,sans-serif' font-size='16' fill='%239AA8A0'>$</text></svg>")}
+  }
 
   .gear{border:1px solid var(--line);border-radius:12px;padding:12px;margin-top:12px}
   .gear .head{display:flex;gap:8px;align-items:center}
@@ -134,7 +136,7 @@
 <body>
 <div class="wrap">
   <h1>Shoot Pricing</h1>
-  <p class="sub">What to charge for a family session, with every cost counted.</p>
+  <p class="sub">What to charge for a photo session, with every cost counted.</p>
 
   <div class="tabs" role="tablist">
     <button class="on" data-tab="quote">Session</button>
@@ -169,7 +171,7 @@
       </div>
       <div class="row">
         <div><label>Round-trip miles</label><input type="number" inputmode="decimal" step="1" min="0" id="q_miles"></div>
-        <div class="money"><label>Extras (props, permit, parking)</label><input type="number" inputmode="decimal" step="1" min="0" id="q_extras"></div>
+        <div class="money"><label>Extras (props, parking, etc.)</label><input type="number" inputmode="decimal" step="1" min="0" id="q_extras"></div>
       </div>
       <div id="addonChecks"></div>
       <p class="hint">Rule of thumb: editing takes 1.5 to 3 hours for every hour shot. Culling, color, skin, exporting, and uploading a gallery all count. Session types add or subtract a flat amount set in Setup.</p>
@@ -179,7 +181,7 @@
       <h2>Session details</h2>
       <p class="why">Who, when, and where. These only appear on the proposal.</p>
       <div class="row">
-        <div><label>Family or client name</label><input type="text" id="p_client" placeholder="The Johnsons"></div>
+        <div><label>Client name</label><input type="text" id="p_client" placeholder="The Johnsons"></div>
       </div>
       <div class="row">
         <div><label>Date</label><input type="date" id="p_date"></div>
@@ -351,7 +353,7 @@
 
 <script>
 (function(){
-  var APP_VERSION = '2.0';
+  var APP_VERSION = '2.3';
   var KEY = 'shootPricing.v2';
   var THIS_YEAR = new Date().getFullYear();
   var YEAR_FRACTION = (new Date().getMonth() + 0.5) / 12; // how far into this year we are
@@ -375,9 +377,9 @@
   var SCALES = {
     shoot: {weight:0.40, text:[
       'Still on auto or a preset. Settings, light, and posing are a scramble, and a one-hour session takes closer to two.',
-      'Comfortable in good light. Poses come from a list on your phone. Harsh sun, shade, or a wiggly toddler throws you off.',
+      'Comfortable in good light. Poses come from a list on your phone. Harsh sun, shade, or a restless subject throws you off.',
       'You pick settings by eye and adjust as the light changes. You have go-to poses and a plan for the location, and you finish on time.',
-      'You handle any light, scout locations ahead, and direct families naturally. Kids and grandparents both relax around you.',
+      'You handle any light, scout locations ahead, and direct people naturally. Kids, couples, and nervous adults all relax around you.',
       'You could shoot this session with your eyes closed. Every frame is intentional, and other photographers ask how you did it.'
     ]},
     edit: {weight:0.35, text:[
@@ -390,7 +392,7 @@
     client: {weight:0.25, text:[
       'Mostly shooting friends and family. No contract, no set timeline, no gallery system yet.',
       'A few paying clients. You have a simple contract and deliver a gallery, but timelines and communication vary.',
-      'Clients book, sign, pay, and receive a gallery on a set schedule. You have reviews and repeat families.',
+      'Clients book, sign, pay, and receive a gallery on a set schedule. You have reviews and repeat clients.',
       'You are booked weeks out with referrals. Sessions, ordering, and delivery run like clockwork.',
       'You have a waitlist. Clients travel for you and pay what you ask without hesitation.'
     ]}
@@ -785,7 +787,7 @@
     var c = calc(), p = S.proposal, t = S.terms;
     var deposit = Math.min(c.price, num(t.deposit));
     return {
-      client: p.client || 'your family', date: niceDate(p.date), time: niceTime(p.time), location: p.location,
+      client: p.client || 'you', date: niceDate(p.date), time: niceTime(p.time), location: p.location,
       people: num(p.people), photos: photosPromised(), hours: num(S.quote.shootHours),
       price: c.price, listPrice: c.listPrice, discount: c.discount, deposit: deposit, balance: c.price - deposit,
       reschedules: Math.max(0, Math.round(num(t.reschedules))), notice: Math.max(0, Math.round(num(t.noticeHours))),
