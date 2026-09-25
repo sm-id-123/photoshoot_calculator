@@ -308,15 +308,22 @@
       </div>
       <div id="qrPreview" class="qrbox"></div>
       <div class="row">
-        <div><label>Zelle phone number</label><input type="tel" inputmode="tel" id="t_zellePhone" placeholder="555-123-4567"></div>
-        <div><label>Name shown on Zelle</label><input type="text" id="t_zelleName" placeholder="Marisa Miller"></div>
+        <div><label>Zelle QR link (from your banking app)</label><input type="text" id="t_zelleLink" placeholder="https://enroll.zellepay.com/qr-codes?data=..." autocapitalize="none" autocorrect="off"></div>
       </div>
-      <p class="hint">Zelle runs inside banking apps, so the PDF shows the phone number and a Zelle QR code built from it, which bank apps can scan. Leave the phone blank to hide Zelle.</p>
+      <div class="row">
+        <div><label>Zelle phone number</label><input type="tel" inputmode="tel" id="t_zellePhone" placeholder="555-123-4567"></div>
+      </div>
+      <div id="zellePreview" class="qrbox"></div>
+      <p class="hint">In your banking app, open Zelle, tap your QR code, and use Share or Copy Link. Paste that link here and the app draws the same QR code on the deposit PDF, which other banking apps can scan. The phone number is shown next to it; if you leave it blank it is read from the link.</p>
       <p class="hint">In Venmo: tap your profile, then the QR icon, then Share, and save the image to Photos. Upload it here. The image stays on this phone only and is not part of the Backup text, so re-upload it after a restore.</p>
     </div>
 
     <div class="card">
       <h2>Travel</h2>
+      <div class="row">
+        <div class="suggest-wrap"><label>Where trips start (home address or zip)</label><input type="text" id="t_home" placeholder="Start typing your address or zip" autocomplete="off" autocorrect="off"><div class="suggest" id="homeSuggest"></div></div>
+      </div>
+      <p class="hint" id="homeHint"></p>
       <div class="row">
         <div class="money"><label>Cost per mile</label><input type="number" inputmode="decimal" step="0.01" min="0" id="s_mileRate"></div>
       </div>
@@ -360,7 +367,7 @@
 
 <script>
 (function(){
-  var APP_VERSION = '2.4';
+  var APP_VERSION = '2.7';
   var KEY = 'shootPricing.v2';
   var THIS_YEAR = new Date().getFullYear();
   var YEAR_FRACTION = (new Date().getMonth() + 0.5) / 12; // how far into this year we are
@@ -495,7 +502,7 @@
         {name:'Website and client galleries', amount:10, every:'month'}
       ],
       quote: {shootHours:0.5, editHours:2.5, miles:30, extras:0, selected:{}, discount:0, discountType:'pct'},
-      terms: {name:'Marisa Elise Photography', deposit:50, photosPerHour:30, reschedules:2, noticeHours:24, venmo:'', zellePhone:'', zelleName:''},
+      terms: {name:'Marisa Elise Photography', deposit:50, photosPerHour:30, reschedules:2, noticeHours:24, venmo:'', zellePhone:'', zelleLink:'', home:'', homeLat:null, homeLon:null},
       proposal: {client:'', date:'', time:'', location:'', people:4, photos:''}
     };
   }
@@ -973,17 +980,35 @@
     box.innerHTML = '<img src="' + q + '" alt="Venmo QR code"><button class="btn danger" id="qrRemove">Remove</button>';
     document.getElementById('qrRemove').addEventListener('click', function(){ try{ localStorage.removeItem(QR_KEY); }catch(e){} renderQr(); renderAfter(); });
   }
-  function zellePhone(){ return String(S.terms.zellePhone || '').trim(); }
-  function zelleDigits(){ return zellePhone().replace(/\D/g, ''); }
-  function zelleQrUrl(){
-    if(!zelleDigits()) return '';
-    var payload = {token: zelleDigits(), name: (S.terms.zelleName || S.terms.name || '').toUpperCase(), action: 'payment'};
-    var b64 = btoa(unescape(encodeURIComponent(JSON.stringify(payload))));
-    return 'https://enroll.zellepay.com/qr-codes?data=' + b64;
+  function zelleLink(){ var l = String(S.terms.zelleLink || '').trim(); return /^https?:\/\//i.test(l) ? l : ''; }
+  function zelleFromLink(){
+    var l = zelleLink(); if(!l) return null;
+    try{
+      var m = l.match(/[?&]data=([^&#]+)/); if(!m) return null;
+      var json = decodeURIComponent(escape(atob(decodeURIComponent(m[1]))));
+      var o = JSON.parse(json); return o && o.token ? o : null;
+    }catch(e){ return null; }
+  }
+  function formatPhone(t){
+    var d = String(t).replace(/\D/g, '');
+    if(d.length === 11 && d.charAt(0) === '1') d = d.slice(1);
+    if(d.length === 10) return '(' + d.slice(0,3) + ') ' + d.slice(3,6) + '-' + d.slice(6);
+    return String(t);
+  }
+  function zellePhone(){
+    var p = String(S.terms.zellePhone || '').trim(); if(p) return p;
+    var o = zelleFromLink(); return o ? (String(o.token).indexOf('@') >= 0 ? o.token : formatPhone(o.token)) : '';
   }
   function zelleQrImage(){
-    if(!window.qrcode || !zelleQrUrl()) return '';
-    try{ var q = window.qrcode(0, 'M'); q.addData(zelleQrUrl()); q.make(); return q.createDataURL(6, 8); }catch(e){ return ''; }
+    if(!window.qrcode || !zelleLink()) return '';
+    try{ var q = window.qrcode(0, 'M'); q.addData(zelleLink()); q.make(); return q.createDataURL(6, 8); }catch(e){ return ''; }
+  }
+  function renderZelle(){
+    var box = document.getElementById('zellePreview'); if(!box) return;
+    var img = zelleQrImage(), o = zelleFromLink();
+    if(!zelleLink()){ box.innerHTML = '<span class="hint">No Zelle link yet.</span>'; return; }
+    if(!o){ box.innerHTML = '<span class="hint">That link does not look like a Zelle QR link. It should start with https://enroll.zellepay.com/qr-codes?data=</span>'; return; }
+    box.innerHTML = (img ? '<img src="' + img + '" alt="Zelle QR code">' : '') + '<span class="hint">Reads as ' + esc(o.name || '') + (o.token ? ', ' + esc(zellePhone()) : '') + '</span>';
   }
   function venmoUser(){ return String(S.terms.venmo || '').replace(/^@/, '').trim(); }
   function venmoLink(){ return venmoUser() ? 'https://venmo.com/u/' + venmoUser() : ''; }
@@ -1035,6 +1060,17 @@
       {name:'Yahoo Calendar', url:yahooLink()}
     ];
   }
+  function foldLine(line){
+    // iCalendar lines must be at most 75 octets; continue on the next line with a leading space
+    var out = [], cur = '', bytes = 0;
+    for(var i=0;i<line.length;i++){
+      var ch = line.charAt(i), b = encodeURIComponent(ch).split('%').length - 1; if(b === 0) b = 1;
+      if(bytes + b > 74){ out.push(cur); cur = ' ' + ch; bytes = 1 + b; }
+      else { cur += ch; bytes += b; }
+    }
+    out.push(cur);
+    return out.join('\r\n');
+  }
   function icsText(){
     var sd = sessionDates(); if(!sd) return '';
     function escI(s){ return String(s).replace(/\\/g, '\\\\').replace(/;/g, '\\;').replace(/,/g, '\\,').replace(/\n/g, '\\n'); }
@@ -1047,10 +1083,10 @@
       'DTSTART:' + stampLocal(sd.start),
       'DTEND:' + stampLocal(sd.end),
       'SUMMARY:' + escI(eventTitle()),
-      'DESCRIPTION:' + escI(eventDetails()),
       (S.proposal.location ? 'LOCATION:' + escI(S.proposal.location) : ''),
+      'DESCRIPTION:' + escI(eventDetails()),
       'BEGIN:VALARM','TRIGGER:-P1D','ACTION:DISPLAY','DESCRIPTION:Photo session tomorrow','END:VALARM',
-      'END:VEVENT','END:VCALENDAR'].filter(Boolean).join('\r\n');
+      'END:VEVENT','END:VCALENDAR'].filter(Boolean).map(foldLine).join('\r\n');
   }
   function paymentText(){
     var d = proposalData(), L = [];
@@ -1063,7 +1099,7 @@
     L.push('Total: ' + money0(d.price) + ' (' + money0(d.deposit) + ' deposit now, ' + money0(d.balance) + ' on the day)');
     L.push('');
     if(venmoUser()){ L.push('Deposit by Venmo: @' + venmoUser()); L.push(venmoLink()); }
-    if(zellePhone()){ L.push((venmoUser() ? 'Or Zelle: ' : 'Deposit by Zelle: ') + zellePhone() + (S.terms.zelleName ? ' (' + S.terms.zelleName + ')' : '')); }
+    if(zellePhone()){ L.push((venmoUser() ? 'Or Zelle: ' : 'Deposit by Zelle: ') + zellePhone() + ' (from your banking app)'); }
     if(!venmoUser() && !zellePhone()){ L.push('Deposit by Venmo (I\u2019ll send my code).'); }
     var cl = calendarLinks();
     if(cl.length){
@@ -1075,51 +1111,92 @@
     return L.join('\n');
   }
   /* ---------- location suggestions (Photon / OpenStreetMap) ---------- */
-  var locTimer = null, locBias = null;
+  var locBias = null;
   try{ if(navigator.geolocation){ navigator.geolocation.getCurrentPosition(function(pos){ locBias = {lat:pos.coords.latitude, lon:pos.coords.longitude}; }, function(){}, {maximumAge:3600000, timeout:5000}); } }catch(e){}
   function photonLabel(f){
     var pr = f.properties || {}, main = pr.name || '', line2 = [];
     var street = [pr.housenumber, pr.street].filter(Boolean).join(' ');
     if(!main && street){ main = street; street = ''; }
+    if(!main && pr.postcode){ main = pr.postcode; }
     if(street) line2.push(street);
     if(pr.city || pr.town || pr.village) line2.push(pr.city || pr.town || pr.village);
     if(pr.state) line2.push(pr.state);
-    if(pr.postcode) line2.push(pr.postcode);
-    return {main:main, sub:line2.join(', ')};
+    if(pr.postcode && main !== pr.postcode) line2.push(pr.postcode);
+    var c = (f.geometry && f.geometry.coordinates) || [null, null];
+    return {main:main, sub:line2.join(', '), lon:c[0], lat:c[1]};
   }
-  function showLocSuggest(items){
-    var box = document.getElementById('locSuggest');
-    if(!items.length){ box.classList.remove('on'); box.innerHTML = ''; return; }
-    box.innerHTML = '';
-    items.forEach(function(it){
-      var d = document.createElement('div');
-      d.innerHTML = esc(it.main) + (it.sub ? '<small>' + esc(it.sub) + '</small>' : '');
-      d.addEventListener('mousedown', function(ev){ ev.preventDefault(); });
-      d.addEventListener('click', function(){
-        var full = it.sub ? it.main + ', ' + it.sub : it.main;
-        var el = document.getElementById('p_location'); el.value = full; S.proposal.location = full; save();
-        box.classList.remove('on'); renderProposal(); renderAfter();
+  function attachSuggest(inputId, boxId, onPick){
+    var el = document.getElementById(inputId), box = document.getElementById(boxId), timer = null;
+    function show(items){
+      if(!items.length){ box.classList.remove('on'); box.innerHTML = ''; return; }
+      box.innerHTML = '';
+      items.forEach(function(it){
+        var d = document.createElement('div');
+        d.innerHTML = esc(it.main) + (it.sub ? '<small>' + esc(it.sub) + '</small>' : '');
+        d.addEventListener('mousedown', function(ev){ ev.preventDefault(); });
+        d.addEventListener('click', function(){
+          var full = it.sub ? it.main + ', ' + it.sub : it.main;
+          el.value = full; box.classList.remove('on'); onPick(full, it);
+        });
+        box.appendChild(d);
       });
-      box.appendChild(d);
-    });
-    box.classList.add('on');
-  }
-  function fetchLocSuggest(q){
-    if(!window.fetch || q.length < 3){ showLocSuggest([]); return; }
-    var url = 'https://photon.komoot.io/api/?limit=5&lang=en&q=' + encodeURIComponent(q);
-    if(locBias) url += '&lat=' + locBias.lat + '&lon=' + locBias.lon + '&zoom=10&location_bias_scale=0.4';
-    fetch(url).then(function(r){ return r.json(); }).then(function(j){
-      var items = [], seen = {};
-      (j.features || []).forEach(function(f){ var l = photonLabel(f); var key = l.main + '|' + l.sub; if(l.main && !seen[key]){ seen[key] = 1; items.push(l); } });
-      showLocSuggest(items);
-    }).catch(function(){ showLocSuggest([]); });
-  }
-  (function(){
-    var el = document.getElementById('p_location'), box = document.getElementById('locSuggest');
-    el.addEventListener('input', function(){ clearTimeout(locTimer); var q = el.value.trim(); locTimer = setTimeout(function(){ fetchLocSuggest(q); }, 300); });
+      box.classList.add('on');
+    }
+    function query(q){
+      if(!window.fetch || q.length < 3){ show([]); return; }
+      var url = 'https://photon.komoot.io/api/?limit=5&lang=en&q=' + encodeURIComponent(q);
+      if(locBias) url += '&lat=' + locBias.lat + '&lon=' + locBias.lon + '&zoom=10&location_bias_scale=0.4';
+      fetch(url).then(function(r){ return r.json(); }).then(function(j){
+        var items = [], seen = {};
+        (j.features || []).forEach(function(f){ var l = photonLabel(f); var key = l.main + '|' + l.sub; if(l.main && !seen[key]){ seen[key] = 1; items.push(l); } });
+        show(items);
+      }).catch(function(){ show([]); });
+    }
+    el.addEventListener('input', function(){ clearTimeout(timer); var q = el.value.trim(); timer = setTimeout(function(){ query(q); }, 300); });
     el.addEventListener('blur', function(){ setTimeout(function(){ box.classList.remove('on'); }, 150); });
     el.addEventListener('focus', function(){ if(box.innerHTML) box.classList.add('on'); });
-  })();
+  }
+  function attachAllSuggest(){
+  attachSuggest('p_location', 'locSuggest', function(full, it){
+    S.proposal.location = full; S.proposal.locLat = it.lat; S.proposal.locLon = it.lon; save();
+    renderProposal(); renderAfter(); autoMiles();
+  });
+  attachSuggest('t_home', 'homeSuggest', function(full, it){
+    S.terms.home = full; S.terms.homeLat = it.lat; S.terms.homeLon = it.lon; save();
+    renderHomeHint(); autoMiles();
+  });
+  document.getElementById('p_location').addEventListener('input', function(){ S.proposal.locLat = null; S.proposal.locLon = null; save(); });
+  document.getElementById('t_home').addEventListener('input', function(){ S.terms.homeLat = null; S.terms.homeLon = null; save(); renderHomeHint(); });
+  }
+  function renderHomeHint(){
+    var h = document.getElementById('homeHint');
+    h.textContent = (S.terms.homeLat && S.terms.homeLon) ? 'Saved. Picking a session location from the list will fill in round-trip miles automatically.' : 'Pick your home from the suggestion list so the app knows where trips start. You can still type miles by hand on any session.';
+  }
+
+  /* ---------- automatic round-trip miles ---------- */
+  function haversineMiles(lat1, lon1, lat2, lon2){
+    var R = 3958.8, toR = Math.PI/180;
+    var dLat = (lat2-lat1)*toR, dLon = (lon2-lon1)*toR;
+    var a = Math.sin(dLat/2)*Math.sin(dLat/2) + Math.cos(lat1*toR)*Math.cos(lat2*toR)*Math.sin(dLon/2)*Math.sin(dLon/2);
+    return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
+  }
+  function setMiles(oneWay, how){
+    var rt = Math.max(1, Math.round(oneWay * 2));
+    S.quote.miles = rt; save();
+    document.getElementById('q_miles').value = rt;
+    renderQuote(); toast('Round trip set to ' + rt + ' miles' + (how ? ' (' + how + ')' : ''));
+  }
+  function autoMiles(){
+    var t = S.terms, p = S.proposal;
+    if(!(t.homeLat && t.homeLon && p.locLat && p.locLon)) return;
+    var straight = haversineMiles(t.homeLat, t.homeLon, p.locLat, p.locLon);
+    if(!window.fetch){ setMiles(straight * 1.3, 'estimated'); return; }
+    var url = 'https://router.project-osrm.org/route/v1/driving/' + t.homeLon + ',' + t.homeLat + ';' + p.locLon + ',' + p.locLat + '?overview=false';
+    fetch(url).then(function(r){ return r.json(); }).then(function(j){
+      if(j && j.routes && j.routes[0] && j.routes[0].distance){ setMiles(j.routes[0].distance / 1609.344, 'driving'); }
+      else { setMiles(straight * 1.3, 'estimated'); }
+    }).catch(function(){ setMiles(straight * 1.3, 'estimated'); });
+  }
   function mapLinks(){
     var loc = String(S.proposal.location || '').trim(); if(!loc) return null;
     return {apple:'https://maps.apple.com/?q=' + encodeURIComponent(loc), google:'https://www.google.com/maps/search/?api=1&query=' + encodeURIComponent(loc)};
@@ -1153,7 +1230,7 @@
     doc.text('Send the ' + money0(d.deposit) + ' deposit with either option', 306, y, {align:'center'}); y += 22;
     var methods = [];
     if(venmoUser() || getQr()) methods.push({title:'Venmo', qr:getQr(), qrType:'JPEG', id: venmoUser() ? '@' + venmoUser() : '', note:'Scan in the Venmo app or search the username.', button:'Pay on Venmo', url: venmoLink()});
-    if(zellePhone()) methods.push({title:'Zelle', qr:zelleQrImage(), qrType:'PNG', id: zellePhone(), sub: S.terms.zelleName || '', note:'Scan from your banking app, or send to this number.', button:'Pay with Zelle', url: zelleQrUrl()});
+    if(zellePhone() || zelleLink()) methods.push({title:'Zelle', qr:zelleQrImage(), qrType:'PNG', id: zellePhone(), sub: (zelleFromLink() && zelleFromLink().name) ? zelleFromLink().name : '', note: zelleQrImage() ? 'Scan from your banking app\u2019s Zelle screen, or send to this number.' : 'Open your banking app, choose Zelle, and send to this phone number.', button:'', url:''});
     var colW = 232, gap = 40, total = methods.length * colW + (methods.length - 1) * gap, x0 = 306 - total/2, topY = y;
     for(var m=0;m<methods.length;m++){
       var M = methods[m], cx = x0 + m * (colW + gap) + colW/2, yy = topY;
@@ -1162,7 +1239,12 @@
       var size = 180;
       doc.setDrawColor(214, 221, 216); doc.roundedRect(cx - size/2 - 8, yy - 2, size + 16, size + 4, 10, 10, 'S');
       if(M.qr){ try{ doc.addImage(M.qr, M.qrType, cx - size/2, yy, size, size); }catch(e){} }
-      else { doc.setFont('helvetica', 'normal'); doc.setFontSize(10); doc.setTextColor(94, 107, 100); doc.text('No QR code', cx, yy + size/2, {align:'center'}); }
+      else {
+        doc.setFont('helvetica', 'bold'); doc.setFontSize(40); doc.setTextColor(35, 64, 52);
+        doc.text('Z', cx, yy + size/2 + 14, {align:'center'});
+        doc.setFont('helvetica', 'normal'); doc.setFontSize(10); doc.setTextColor(94, 107, 100);
+        doc.text('Send with Zelle', cx, yy + size/2 + 40, {align:'center'});
+      }
       yy += size + 22;
       doc.setFont('helvetica', 'bold'); doc.setFontSize(16); doc.setTextColor(28, 34, 31);
       doc.text(M.id, cx, yy, {align:'center'}); yy += 16;
@@ -1211,8 +1293,11 @@
     (function(){ var f = document.getElementById('t_qrFile');
       f.addEventListener('change', function(){ if(f.files && f.files[0]) storeQr(f.files[0]); }); })();
     renderQr(); renderAfter();
-    bindText('t_zellePhone', S.terms, 'zellePhone', renderAfter);
-    bindText('t_zelleName', S.terms, 'zelleName', renderAfter);
+    bindText('t_home', S.terms, 'home');
+    attachAllSuggest(); renderHomeHint();
+    bindText('t_zellePhone','t_zelleLink', S.terms, 'zellePhone', function(){ renderZelle(); renderAfter(); });
+    bindText('t_zelleLink', S.terms, 'zelleLink', function(){ renderZelle(); renderAfter(); });
+    renderZelle();
     bindSimple('s_roundTo', S, 'roundTo');
     bindSimple('q_shootHours', S.quote, 'shootHours');
     bindSimple('q_editHours', S.quote, 'editHours');
@@ -1267,7 +1352,7 @@
     if(confirm('Reset every setting to the starting defaults?')){ S = defaults(); save(); rebuild(); toast('Reset to defaults.'); }
   });
   function rebuild(){
-    ['p_client','p_date','p_time','p_location','p_people','p_photos','t_name','t_deposit','t_photosPerHour','t_reschedules','t_noticeHours','c_shoot','c_edit','c_client','s_shootsPerMonth','s_mileRate','s_cushion','t_zellePhone','t_zelleName','q_discount','q_discountType','t_venmo','t_qrFile','s_roundTo','q_shootHours','q_editHours','q_miles','q_extras'].forEach(function(id){
+    ['p_client','p_date','p_time','p_location','p_people','p_photos','t_name','t_deposit','t_photosPerHour','t_reschedules','t_noticeHours','c_shoot','c_edit','c_client','s_shootsPerMonth','s_mileRate','s_cushion','t_home','t_zellePhone','t_zelleLink','q_discount','q_discountType','t_venmo','t_qrFile','s_roundTo','q_shootHours','q_editHours','q_miles','q_extras'].forEach(function(id){
       var el = document.getElementById(id); var c = el.cloneNode(true); el.parentNode.replaceChild(c, el);
     });
     renderAll();
