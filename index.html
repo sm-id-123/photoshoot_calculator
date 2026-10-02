@@ -215,8 +215,8 @@
       <p class="why">Tick what the client should see as its own line. The total is always shown.</p>
       <label class="check"><input type="checkbox" id="sh_type"><span>Session type</span></label>
       <label class="check"><input type="checkbox" id="sh_discount"><span>Discount (shows the price before and after)</span></label>
-      <label class="check"><input type="checkbox" id="sh_travel"><span>Travel (miles and cost)</span></label>
-      <label class="check"><input type="checkbox" id="sh_extras"><span>Extras, labeled as:</span></label>
+      <label class="check"><input type="checkbox" id="sh_travel"><span>Travel (round-trip miles)</span></label>
+      <label class="check"><input type="checkbox" id="sh_extras"><span>Extras, described as (no amount shown):</span></label>
       <div class="row"><div><input type="text" id="q_extrasLabel" placeholder="Extras this shoot"></div></div>
     </div>
 
@@ -397,7 +397,7 @@
 
 <script>
 (function(){
-  var APP_VERSION = '3.1';
+  var APP_VERSION = '3.4';
   var KEY = 'shootPricing.v2';
   var THIS_YEAR = new Date().getFullYear();
   var YEAR_FRACTION = (new Date().getMonth() + 0.5) / 12; // how far into this year we are
@@ -861,9 +861,9 @@
     rows.push(['Session length', plural(d.hours, 'hour')]);
     rows.push(['People in the photos', d.people]);
     rows.push(['Edited photos you\u2019ll receive', 'At least ' + d.photos]);
-    if(sh.travel && d.miles > 0) rows.push(['Travel', d.miles + ' miles round trip, ' + money0(d.travel)]);
-    if(sh.extras && d.extras > 0) rows.push([d.extrasLabel, money0(d.extras)]);
-    if(sh.discount && d.discount > 0){ rows.push(['Session price', money0(d.listPrice)]); rows.push(['Your discount', '\u2212 ' + money0(d.discount)]); }
+    if(sh.travel) rows.push(['Travel', d.miles + ' miles round trip']);
+    if(sh.extras) rows.push(['Extras', d.extrasLabel]);
+    if(sh.discount && d.discount > 0){ rows.push(['Session price', money0(d.listPrice)]); rows.push(['Your discount', '- ' + money0(d.discount)]); }
     rows.push(['Deposit to hold the date', money0(d.deposit)]);
     return rows;
   }
@@ -874,6 +874,7 @@
     var dl = '';
     for(var i=0;i<rows.length;i++) dl += '<dt>' + esc(rows[i][0]) + '</dt><dd>' + esc(String(rows[i][1])) + '</dd>';
     var terms = termsSentences(d).map(function(x){ return '<p>' + esc(x) + '</p>'; }).join('');
+    if(typeof renderAfter === 'function') renderAfter();
     document.getElementById('proposalPreview').innerHTML =
       '<h3>Photo session for ' + esc(d.client) + '</h3>' +
       '<div class="from">A proposal from ' + esc(d.name) + '</div>' +
